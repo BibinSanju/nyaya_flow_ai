@@ -21,12 +21,16 @@ backend/.env.*
 # testing
 /coverage
 
-# next.js
-/.next/
+# next.js & frontend build
+.next/
+**/.next/
 /out/
+frontend/out/
+frontend/.next/
 
 # production
 /build
+frontend/build
 
 # misc
 .DS_Store

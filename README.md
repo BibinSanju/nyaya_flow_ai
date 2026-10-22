@@ -331,30 +331,49 @@ nyaya_flow/
 │   ├── .env.example              # Documented environment variables
 │   ├── package.json              # Backend dependencies
 │   └── server.js                 # Express server entrypoint (Port 5000)
-├── src/
-│   ├── app/
-│   │   ├── auth/page.tsx         # Role sign-in with real OTP verification
-│   │   ├── citizen/dashboard/    # Litigant filing, real upload & OCR review
-│   │   ├── advocate/dashboard/   # Counsel brief management & vakalatnama
-│   │   ├── police/dashboard/     # FIR entry, BNS mapper & evidence upload
-│   │   ├── registrar/dashboard/  # Scrutiny checklist & CNR allocator
-│   │   ├── judge/dashboard/      # Cause list & bench order signing
-│   │   ├── admin/dashboard/      # Health metrics & immutable audit trail
-│   │   ├── globals.css           # Clean B&W theme variables & utilities
-│   │   └── layout.tsx            # Inter typography & minimal layout
-│   ├── components/
-│   │   └── document-upload.tsx   # Drag-and-drop, camera scan & progress UI
-│   └── utils/
-│       └── api.ts                # Centralized client for real backend APIs
-├── next.config.ts                # API rewrites proxying /api/* to port 5000
-└── package.json                  # Frontend dependencies
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── auth/page.tsx         # Role sign-in with real OTP verification
+│   │   │   ├── citizen/dashboard/    # Litigant filing, real upload & OCR review
+│   │   │   ├── advocate/dashboard/   # Counsel brief management & vakalatnama
+│   │   │   ├── police/dashboard/     # FIR entry, BNS mapper & evidence upload
+│   │   │   ├── registrar/dashboard/  # Scrutiny checklist & CNR allocator
+│   │   │   ├── judge/dashboard/      # Cause list & bench order signing
+│   │   │   ├── admin/dashboard/      # Health metrics & immutable audit trail
+│   │   │   ├── globals.css           # Clean B&W theme variables & utilities
+│   │   │   └── layout.tsx            # Inter typography & minimal layout
+│   │   ├── components/
+│   │   │   └── document-upload.tsx   # Drag-and-drop, camera scan & progress UI
+│   │   └── utils/
+│   │       └── api.ts                # Centralized client for real backend APIs
+│   ├── public/                       # Static public assets and courthouse illustrations
+│   ├── next.config.ts                # API rewrites proxying /api/* to port 5000
+│   └── package.json                  # Frontend dependencies
+├── package.json                      # Root workspace orchestrator
+└── vercel.json                       # Vercel deployment configuration
 ```
 
 ---
 
 ## 🚀 Quick Start Guide
 
-### 1. Start the Backend Server (Express + Node.js)
+### Option A: From Workspace Root (One-Click)
+
+```bash
+# Run both frontend & backend concurrently
+npm run dev:all
+
+# Or run frontend only
+npm run dev
+
+# Or run backend only
+npm run dev:backend
+```
+
+### Option B: Individual Services
+
+#### 1. Start the Backend Server (Express + Node.js)
 
 ```bash
 cd backend
@@ -363,10 +382,10 @@ node server.js
 ```
 The backend server runs on `http://127.0.0.1:5000`.
 
-### 2. Start the Frontend (Next.js)
+#### 2. Start the Frontend (Next.js)
 
-At the workspace root directory:
 ```bash
+cd frontend
 npm install
 npm run dev
 ```
