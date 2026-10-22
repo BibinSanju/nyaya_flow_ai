@@ -314,8 +314,10 @@ class DatabaseManager:
             "INSERT INTO physical_archive_locations (id, petition_id, building, floor, room_number, rack_number, cupboard_number, shelf_number, box_number, file_barcode, logged_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (new_id, petition_id, building, floor, room_number, rack_number, cupboard_number, shelf_number, box_number, file_barcode, logged_by)
         )
-        # Also auto-update petition status to 'Registry Audited'
-        self.update_petition_status(petition_id, "Registry Audited")
+        # Only update petition status to 'Registry Audited' if it hasn't already reached CNR Issued or later
+        current_case = self.get_petition_by_id(petition_id)
+        if current_case and current_case.get("status") in ("Scrutiny Pending", None):
+            self.update_petition_status(petition_id, "Registry Audited")
         return new_id
 
     def get_physical_archive_by_petition(self, petition_id: str) -> Optional[Dict[str, Any]]:

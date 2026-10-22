@@ -90,18 +90,15 @@ export default function IndiaMapComponent() {
   return (
     <div
       id="india-map-container"
-      className="relative w-full max-w-[500px] aspect-[4/5] bg-slate-950/40 border border-slate-800/80 rounded-2xl p-6 glass-panel overflow-hidden"
+      className="relative w-full max-w-[500px] aspect-[4/5] bg-stone-50 dark:bg-slate-900/60 border border-stone-200 dark:border-slate-800 rounded-xl p-6 institutional-panel overflow-hidden"
     >
-      {/* Grid overlay */}
-      <div className="absolute inset-0 grid-bg-overlay opacity-30 pointer-events-none" />
-
       {/* Map Header */}
       <div className="relative z-10 mb-4">
-        <h3 className="text-sm font-semibold tracking-wider uppercase text-yellow-500">
-          Live Judicial Workload Map
+        <h3 className="text-xs font-semibold tracking-wider uppercase text-stone-700 dark:text-stone-300">
+          Judicial Caseload Density
         </h3>
-        <p className="text-xs text-slate-400">
-          NyayaFlow active registry connections across High Courts
+        <p className="text-xs text-stone-500 dark:text-slate-400">
+          State High Court & Subordinate District Bench Nodes
         </p>
       </div>
 
@@ -109,12 +106,11 @@ export default function IndiaMapComponent() {
         {/* Stylized Outline of India using SVG */}
         <svg
           viewBox="0 0 200 240"
-          className="w-full h-full opacity-35 stroke-yellow-500/30"
+          className="w-full h-full opacity-60 stroke-stone-400 dark:stroke-slate-600"
           fill="none"
           strokeWidth="1.2"
           strokeLinejoin="round"
         >
-          {/* A beautiful polygonal/simplified map outline of India */}
           <path
             d="
               M 92 10 
@@ -126,16 +122,9 @@ export default function IndiaMapComponent() {
               L 44 116 L 36 122 L 28 116 L 32 102 L 20 95 L 24 88 L 36 84 L 46 86 
               L 54 75 L 68 76 L 76 68 L 74 58 L 80 50 L 76 40 L 84 25 Z
             "
-            fill="rgba(11, 83, 69, 0.05)"
-            stroke="url(#mapBorderGradient)"
+            fill="rgba(15, 30, 54, 0.03)"
+            stroke="currentColor"
           />
-          <defs>
-            <linearGradient id="mapBorderGradient" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#d4af37" stopOpacity="0.4" />
-              <stop offset="50%" stopColor="#10b981" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#d4af37" stopOpacity="0.4" />
-            </linearGradient>
-          </defs>
         </svg>
 
         {/* Hotspots / Pulse points */}
@@ -149,23 +138,17 @@ export default function IndiaMapComponent() {
               onMouseEnter={() => setSelectedHub(hub)}
               onMouseLeave={() => setSelectedHub(null)}
             >
-              {/* Ripple ping */}
-              <div className={`absolute -inset-2 rounded-full scale-150 animate-ping opacity-60 ${
-                hub.loadIndex === "High" ? "bg-red-500/20" : "bg-emerald-500/20"
-              }`} />
-
               {/* Central dot */}
               <div
-                className={`w-3.5 h-3.5 rounded-full border border-white shadow-lg transition-all duration-300 ${
+                className={`w-3 h-3 rounded-full border border-white dark:border-slate-900 shadow transition-all duration-200 ${
                   isSelected
-                    ? "scale-125 bg-yellow-400"
+                    ? "scale-125 bg-amber-700 dark:bg-amber-500"
                     : hub.loadIndex === "High"
-                    ? "bg-red-500"
-                    : "bg-emerald-500"
+                    ? "bg-slate-700 dark:bg-slate-400"
+                    : "bg-stone-500 dark:bg-stone-400"
                 }`}
               />
 
-              {/* Tooltip trigger placeholder */}
               <span className="sr-only">{hub.location}</span>
             </div>
           );
@@ -173,7 +156,7 @@ export default function IndiaMapComponent() {
       </div>
 
       {/* Floating Detailed Panel showing active selection */}
-      <div className="absolute bottom-4 left-4 right-4 h-24 glass-panel rounded-2xl p-4 flex flex-col justify-center border-white/5 shadow-2xl">
+      <div className="absolute bottom-4 left-4 right-4 h-24 bg-white/95 dark:bg-slate-800/90 rounded-lg p-3.5 flex flex-col justify-center border border-stone-200 dark:border-slate-700 shadow-sm">
         <AnimatePresence mode="wait">
           {selectedHub ? (
             <motion.div
