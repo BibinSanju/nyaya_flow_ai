@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:all": "npx concurrently -k \"next dev\" \"node backend/server.js\"",
+    "dev:backend": "node backend/server.js",
+    "backend": "node backend/server.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

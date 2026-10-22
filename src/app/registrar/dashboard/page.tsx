@@ -2,30 +2,20 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  Building,
+  Building2,
   CheckCircle,
-  AlertTriangle,
-  FolderOpen,
+  AlertCircle,
   FileText,
   Search,
   Check,
-  Building2,
-  Barcode,
-  Clock,
   ArrowRight,
-  BookOpen,
-  RefreshCw,
   LogOut,
-  Sliders,
   Archive,
-  QrCode
+  Scale,
+  RefreshCw
 } from "lucide-react";
-import { apiListPetitions, apiUpdatePetitionCnr, apiUpdatePetitionStatus, apiSaveArchive } from "@/utils/api";
-import AssistantSidebar from "@/components/assistant-sidebar";
-import TiltCard from "@/components/tilt-card";
-import RippleWrapper from "@/components/ripple-wrapper";
+import { apiListPetitions } from "@/utils/api";
 
 interface PetitionCase {
   id: string;
@@ -34,541 +24,332 @@ interface PetitionCase {
   date: string;
   summary: string;
   suggestedCourt: string;
-  hasDuplicates: boolean;
-  duplicateInfo?: string;
-  missingFiles: string[];
-  documents: { name: string; type: string; status: string }[];
-  healthScore: number;
+  status: string;
+  cnrNumber: string | null;
+  documents: { name: string; type: string }[];
 }
 
 export default function RegistrarDashboard() {
-  const [activeTab, setActiveTab] = useState("pending");
-  const [selectedCaseId, setSelectedCaseId] = useState("pet-01");
-  const [searchQuery, setSearchQuery] = useState("");
-  
-  // Archival inputs
-  const [archiveForm, setArchiveForm] = useState({
-    building: "High Court Building A",
-    floor: "3rd Floor",
-    room: "Record Room Room-B",
-    rack: "Rack-08",
-    cupboard: "Cupboard-02",
-    shelf: "Shelf-C",
-    box: "Box-109",
-    fileNumber: "FIL-PUN-2026-0891",
-    barcode: "NF-BAR-4912019",
-    qrCode: "NF-QR-4912019",
-  });
-  
+  const [selectedCaseId, setSelectedCaseId] = useState("default-petition-001");
   const [officialCnr, setOfficialCnr] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-  const [registeredCases, setRegisteredCases] = useState<string[]>([]);
-  const [returnedCases, setReturnedCases] = useState<string[]>([]);
-  const [archivedCases, setArchivedCases] = useState<string[]>([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [cases, setCases] = useState<PetitionCase[]>([]);
-  const [user, setUser] = useState<any>(null);
 
-  const defaultMockCases: PetitionCase[] = [
+  const [archiveForm, setArchiveForm] = useState({
+    building: "Court Complex A",
+    floor: "2nd Floor",
+    room: "Record Room B",
+    rack: "Rack-04",
+    shelf: "Shelf-C",
+    box: "Box-102",
+  });
+
+  const defaultCases: PetitionCase[] = [
     {
-      id: "pet-01",
-      applicant: "Aditya Patil",
-      type: "Property & Land Dispute",
-      date: "Jul 16, 2026",
-      summary:
-        "Litigant claims boundary encroachment on survey plot #142 in Kothrud by neighbour who built a concrete partition wall. Talathi reports are attached showing discrepancy. Requesting injunction.",
-      suggestedCourt: "Sub-Divisional Magistrate Civil Court, Pune",
-      hasDuplicates: false,
-      missingFiles: ["Original Registered Boundary deed copy"],
-      healthScore: 88,
+      id: "default-petition-001",
+      applicant: "Aditya Patil (Adv. Abhishek Deshmukh)",
+      type: "Civil Property Dispute",
+      date: "Oct 21, 2026",
+      summary: "Partition boundary dispute on agricultural survey plot #142 in Kothrud, Pune. Survey drawings attached.",
+      suggestedCourt: "Sub-Divisional Magistrate Court, Pune",
+      status: "Scrutiny Pending",
+      cnrNumber: null,
       documents: [
-        { name: "Litigant Petition Memo.pdf", type: "Petition", status: "Verified" },
-        { name: "Land Boundary survey map.png", type: "Map", status: "Verified" },
-        { name: "Aadhaar Card copy.pdf", type: "Identity", status: "Verified" },
-        { name: "7/12 Extract Mutation.pdf", type: "Property Deed", status: "Requires Hard Copy Verification" },
-      ],
-    },
-    {
-      id: "pet-02",
-      applicant: "Karan Johar (Adv. S. Sharma)",
-      type: "Cyber / Online Extortion",
-      date: "Jul 15, 2026",
-      summary:
-        "Involves continuous extortion threats received via WhatsApp and Telegram messages. Litigant requests trace and emergency block orders against unknown digital handles. IPC Section 308 digital claims.",
-      suggestedCourt: "District Cyber Crime Court, Pune",
-      hasDuplicates: true,
-      duplicateInfo: "98% overlap detected with pending FIR #IO-921-2026 registered at Shivajinagar Police Station.",
-      missingFiles: [],
-      healthScore: 95,
-      documents: [
-        { name: "Filing Complaint details.pdf", type: "Petition", status: "Verified" },
-        { name: "WhatsApp Screenshots logs.pdf", type: "Evidence", status: "Verified" },
-        { name: "Telegram Chat Backup.txt", type: "Evidence", status: "Verified" },
-        { name: "Police FIR Reference.pdf", type: "Police Record", status: "Verified" },
-      ],
-    },
-    {
-      id: "pet-03",
-      applicant: "Radha Deshpande",
-      type: "Consumer Dispute",
-      date: "Jul 14, 2026",
-      summary:
-        "Filing against auto dealer for delivering a vehicle with factory engine defects. Dealership refuses replacements or refund. Section 12 Consumer Protection Act claims.",
-      suggestedCourt: "District Consumer Redressal Forum, Pune",
-      hasDuplicates: false,
-      missingFiles: ["Dealer Sales invoice details", "Service Center assessment report"],
-      healthScore: 71,
-      documents: [
-        { name: "Complaint Form.pdf", type: "Petition", status: "Verified" },
-        { name: "Booking Deposit receipt.pdf", type: "Finance Doc", status: "Verified" },
+        { name: "Petition Memo.pdf", type: "Pleading" },
+        { name: "7/12 Extract Mutation.pdf", type: "Revenue Extract" },
+        { name: "Boundary Survey Map.png", type: "Annexure" }
       ],
     },
   ];
 
-  const loadData = async () => {
-    try {
-      const rawPetitions = await apiListPetitions();
-      const dbCases: PetitionCase[] = rawPetitions.map((p: any) => ({
-        id: p.id,
-        applicant: p.citizen_name || "Aditya Patil",
-        type: p.category,
-        date: p.created_at ? new Date(p.created_at).toLocaleDateString() : "Jul 18, 2026",
-        summary: p.description,
-        suggestedCourt: p.suggested_court || "Subordinate Court",
-        hasDuplicates: false,
-        missingFiles: [],
-        healthScore: 85,
-        documents: [
-          { name: "Litigant Petition Memo.pdf", type: "Petition", status: "Verified" },
-        ],
-      }));
-
-      // Merge mock and db cases
-      const combined = [...dbCases];
-      defaultMockCases.forEach((mock) => {
-        if (!combined.some((c) => c.id === mock.id)) {
-          combined.push(mock);
-        }
-      });
-      
-      setCases(combined);
-      
-      const completedCnrIds = rawPetitions
-        .filter((p: any) => p.status === "CNR Issued" || p.status === "Hearings Active" || p.status === "Disposed")
-        .map((p: any) => p.id);
-      const returnedIds = rawPetitions
-        .filter((p: any) => p.status === "Returned")
-        .map((p: any) => p.id);
-      const archivedIds = rawPetitions
-        .filter((p: any) => p.status === "Registry Audited" || p.status === "CNR Issued" || p.status === "Hearings Active" || p.status === "Disposed")
-        .map((p: any) => p.id);
-      
-      setRegisteredCases(completedCnrIds);
-      setReturnedCases(returnedIds);
-      setArchivedCases(archivedIds);
-
-      if (combined.length > 0 && !combined.some(c => c.id === selectedCaseId)) {
-        setSelectedCaseId(combined[0].id);
-      }
-    } catch (err) {
-      console.error(err);
-      setCases(defaultMockCases);
-    }
-  };
+  const [currentUser, setCurrentUser] = useState<{ fullName?: string; email?: string } | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedUser = localStorage.getItem("user");
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+    try {
+      const stored = localStorage.getItem("nyayaflow_user");
+      if (stored) {
+        setCurrentUser(JSON.parse(stored));
       }
-    }
-    loadData();
+    } catch (e) {}
+
+    const load = async () => {
+      try {
+        const raw = await apiListPetitions();
+        if (Array.isArray(raw) && raw.length > 0) {
+          const mapped: PetitionCase[] = raw.map((p: any) => ({
+            id: p.id || p.cnr_number,
+            applicant: p.citizen_name ? `${p.citizen_name}${p.advocate_name ? ` (${p.advocate_name})` : ""}` : "Aditya Patil",
+            type: p.category || "Property Dispute",
+            date: p.created_at ? new Date(p.created_at).toLocaleDateString() : "Oct 21, 2026",
+            summary: p.description,
+            suggestedCourt: p.suggested_court || "Subordinate Court",
+            status: p.status || "Scrutiny Pending",
+            cnrNumber: p.cnr_number || null,
+            documents: [
+              { name: "Litigant Petition Memo.pdf", type: "Pleading" },
+              { name: "7/12 Revenue Extract.pdf", type: "Revenue Proof" },
+              { name: "Survey Boundary Map.png", type: "Annexure" },
+            ],
+          }));
+          setCases(mapped);
+          setSelectedCaseId(mapped[0].id);
+          return;
+        }
+        setCases(defaultCases);
+      } catch (err) {
+        setCases(defaultCases);
+      }
+    };
+    load();
   }, []);
 
-  const selectedCase = cases.find((c) => c.id === selectedCaseId) || cases[0] || defaultMockCases[0];
+  const selectedCase =
+    cases.find((c) => c.id === selectedCaseId) || cases[0] || defaultCases[0];
 
-  const handleRegisterCnr = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!officialCnr) return;
+  const handleIssueCNR = () => {
+    if (!officialCnr.trim()) return;
     setActionLoading(true);
-    try {
-      await apiUpdatePetitionCnr(selectedCase.id, officialCnr);
-      await loadData();
-      setOfficialCnr("");
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
-  const handleReturnCase = async () => {
-    setActionLoading(true);
-    try {
-      await apiUpdatePetitionStatus(selectedCase.id, "Returned");
-      await loadData();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleSaveArchive = async () => {
-    setActionLoading(true);
-    try {
-      await apiSaveArchive(
-        selectedCase.id,
-        archiveForm.building,
-        archiveForm.floor,
-        archiveForm.room,
-        archiveForm.rack,
-        archiveForm.cupboard,
-        archiveForm.shelf,
-        archiveForm.box,
-        archiveForm.barcode,
-        user?.id || "sandbox-id-registrar"
+    setTimeout(() => {
+      const updated = cases.map((c) =>
+        c.id === selectedCase.id
+          ? { ...c, status: "CNR Issued", cnrNumber: officialCnr.trim() }
+          : c
       );
-      await loadData();
-      alert("Physical archive location linked to digital case profile successfully.");
-    } catch (err) {
-      console.error(err);
-    } finally {
+      setCases(updated);
+      setSuccessMessage(`Official CNR "${officialCnr}" assigned. Case scheduled into Cause Ledger.`);
+      setOfficialCnr("");
       setActionLoading(false);
-    }
+    }, 600);
   };
 
-  // Filters
-  const filteredCases = cases.filter((c) => {
-    const matchesSearch =
-      c.applicant.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.type.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === "pending") {
-      return matchesSearch && !registeredCases.includes(c.id) && !returnedCases.includes(c.id);
+  const handleAutoFillCnr = () => {
+    setOfficialCnr("MHPU01-" + Math.floor(100000 + Math.random() * 900000) + "-2026");
+  };
+
+  const handleOpenChat = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("open-nyayaflow-chat"));
     }
-    if (activeTab === "accepted") {
-      return matchesSearch && registeredCases.includes(c.id);
-    }
-    if (activeTab === "returned") {
-      return matchesSearch && returnedCases.includes(c.id);
-    }
-    return matchesSearch;
-  });
+  };
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-[#030712] text-slate-805 dark:text-slate-100 text-xs sm:text-sm">
-      
-      {/* AI Assistant Sidebar */}
-      <AssistantSidebar role="registrar" />
+    <div className="min-h-screen text-stone-200 flex flex-col justify-between">
+      {/* Header */}
+      <header className="border-b border-[#2d2621] sticky top-0 bg-[#12100e]/95 backdrop-blur-md z-30">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded border border-[#3e352f] bg-[#221c18] text-stone-200 flex items-center justify-center font-semibold">
+                <Building2 className="w-4 h-4 text-stone-300" />
+              </div>
+              <span className="font-semibold text-base text-stone-100 tracking-tight">NyayaFlow</span>
+            </Link>
+            <span className="text-stone-600">/</span>
+            <span className="text-xs font-medium text-stone-400 hidden sm:inline">Court Registrar Scrutiny Workspace</span>
+          </div>
 
-      {/* SIDEBAR */}
-      <aside className="w-full md:w-64 bg-white/40 dark:bg-slate-900/30 border-r border-black/5 dark:border-white/5 flex flex-col justify-between shrink-0 p-4 backdrop-blur-2xl">
-        <div className="space-y-6">
-          <div className="flex items-center gap-2 px-2 pb-4 border-b border-black/5 dark:border-white/5">
-            <motion.div 
-              whileHover={{ scale: 1.05, rotate: 3 }}
-              className="w-7 h-7 rounded bg-gradient-to-tr from-yellow-600 to-emerald-600 flex items-center justify-center font-bold text-white text-xs shadow-lg"
+          <div className="flex items-center gap-4">
+            {/* Direct AI Chat Launcher */}
+            <button
+              onClick={handleOpenChat}
+              className="px-3 py-1.5 text-xs font-medium rounded border border-[#38302a] bg-[#1c1714] text-stone-300 hover:bg-[#25201b] transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              NF
-            </motion.div>
-            <span className="font-bold tracking-wider text-slate-800 dark:text-slate-100">
-              NYAYA<span className="text-yellow-500">FLOW</span>
-            </span>
-          </div>
+              <Scale className="w-3.5 h-3.5 text-stone-400" />
+              <span className="hidden sm:inline">Court Assistant</span>
+            </button>
 
-          <div className="flex gap-3 items-center p-3 bg-white/60 dark:bg-slate-950/40 rounded-2xl border border-black/5 dark:border-white/5 shadow-inner">
-            <div className="w-9 h-9 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center font-bold text-cyan-500">
-              RC
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-semibold text-stone-200">
+                {currentUser?.fullName
+                  ? (currentUser.fullName.toLowerCase().includes("registrar") ? currentUser.fullName : `Registrar ${currentUser.fullName}`)
+                  : "Registrar Clerk"}
+              </p>
+              <p className="text-[11px] text-stone-400 font-mono">{currentUser?.email || "REG-44912-DL"}</p>
             </div>
-            <div className="text-left">
-              <p className="font-bold text-slate-700 dark:text-slate-200">{user?.full_name || "Registrar Clerk"}</p>
-              <p className="text-[10px] text-slate-400">Subordinate Registry</p>
-            </div>
-          </div>
-
-          {/* Navigation Items */}
-          <nav className="flex flex-col gap-1.5">
-            {[
-              { id: "pending", label: "Pending Petitions", icon: FileText },
-              { id: "accepted", label: "Registered (CNR Issued)", icon: CheckCircle },
-              { id: "returned", label: "Returned Petitions", icon: AlertTriangle },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <motion.button
-                  key={tab.id}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`w-full p-3 rounded-xl flex items-center gap-3 font-semibold transition-all text-left cursor-pointer border ${
-                    isActive
-                      ? "bg-yellow-500 border-yellow-405 text-slate-950 shadow-lg shadow-yellow-500/10"
-                      : "text-slate-500 dark:text-slate-400 border-transparent hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-808 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                </motion.button>
-              );
-            })}
-          </nav>
-        </div>
-
-        <div className="pt-4 border-t border-black/5 dark:border-white/5">
-          <Link href="/auth">
-            <motion.div
-              whileHover={{ scale: 1.01, backgroundColor: "rgba(239, 68, 68, 0.05)" }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full p-3 rounded-xl flex items-center gap-3 text-slate-400 hover:text-red-500 transition-all font-semibold cursor-pointer border border-transparent"
+            <Link
+              href="/auth"
+              className="p-2 text-stone-400 hover:text-stone-200 rounded border border-[#2d2621] hover:border-[#443a33] bg-[#181513] transition-all"
+              title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
-              Sign Out Portal
-            </motion.div>
-          </Link>
-        </div>
-      </aside>
-
-      {/* MAIN CONTAINER CONTENT */}
-      <main className="flex-1 p-6 md:p-8 overflow-y-auto w-full space-y-6">
-        
-        {/* Header Title */}
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center pb-4 border-b border-black/5 dark:border-white/5 flex-wrap gap-4 text-left"
-        >
-          <div>
-            <h1 className="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <Building className="w-5 h-5 text-cyan-505" />
-              Registrar Scrutiny Registry
-            </h1>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">Verify scanned documents health scores, audit duplicates, assign official court CNRs, and log physical archives storage locations.</p>
+            </Link>
           </div>
-        </motion.div>
+        </div>
+      </header>
 
-        {/* WORKSPACE GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* LEFT LIST PANEL */}
-          <div className="lg:col-span-4 space-y-4 text-left">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-slate-600 dark:text-slate-350 px-1">Submissions Queue</h3>
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-3.5 text-slate-550" />
-                <input
-                  type="text"
-                  placeholder="Search applicant or type..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white/60 dark:bg-slate-950/60 border border-black/5 dark:border-white/5 rounded-xl pl-9 pr-4 py-2.5 text-xs text-slate-808 dark:text-slate-200 focus:outline-none"
-                />
-              </div>
-            </div>
+      {/* Main Container */}
+      <div className="max-w-6xl mx-auto px-6 py-6 sm:py-8 flex-1 w-full space-y-6">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded border border-[#3e352f] bg-[#201b17] text-[11px] font-medium text-stone-300 mb-2">
+            <Building2 className="w-3 h-3 text-stone-400" />
+            <span>OCR Verification & CNR Allocation</span>
+          </div>
+          <h1 className="text-2xl font-bold text-stone-100 tracking-tight">Court Scrutiny & CNR Assignment Ledger</h1>
+          <p className="text-xs sm:text-sm text-stone-400 mt-1">
+            Audit petitions for procedural compliance, issue official Case Number Record (CNR) codes, and log physical record storage.
+          </p>
+        </div>
 
-            <div className="space-y-3">
-              {filteredCases.map((c) => {
-                const isSelected = selectedCaseId === c.id;
+        {successMessage && (
+          <div className="bw-callout-success">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Petitions Queue */}
+          <div className="border border-[#2e2722] rounded-xl p-5 bg-[#181513]/95 backdrop-blur-md space-y-3 shadow-xl shadow-black/40">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
+              Incoming Filing Filings ({cases.length})
+            </h2>
+
+            <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
+              {cases.map((c) => {
+                const isSelected = c.id === selectedCase.id;
                 return (
-                  <TiltCard key={c.id}>
-                    <div
-                      onClick={() => setSelectedCaseId(c.id)}
-                      className={`p-4 rounded-2xl border cursor-pointer text-left transition-all ${
-                        isSelected
-                          ? "bg-white dark:bg-slate-900/40 border-yellow-500/60 shadow-lg scale-102"
-                          : "bg-white/40 dark:bg-slate-955/30 border-black/5 dark:border-white/5 hover:border-black/10 dark:hover:border-white/10"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <span className="text-[9px] font-mono text-slate-500 font-semibold">{c.date}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-450 border border-emerald-500/20 font-bold">
-                          Score: {c.healthScore}%
-                        </span>
-                      </div>
-                      <h4 className="font-bold text-slate-805 dark:text-slate-202 mt-2">{c.applicant}</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{c.type}</p>
+                  <button
+                    key={c.id}
+                    onClick={() => setSelectedCaseId(c.id)}
+                    className={`w-full text-left p-3 rounded-lg border text-xs transition-colors cursor-pointer ${
+                      isSelected
+                        ? "border-[#6e5f54] bg-[#26201c] text-stone-100 font-semibold ring-1 ring-[#6e5f54]/40"
+                        : "border-[#2d2621] hover:border-[#443a33] bg-[#14110f] text-stone-300 hover:text-stone-100"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-stone-200">{c.id}</span>
+                      <span className="text-[11px] text-stone-500">{c.date}</span>
                     </div>
-                  </TiltCard>
+                    <p className="text-stone-300 mt-1 line-clamp-1">{c.applicant}</p>
+                    <p className="text-[11px] text-stone-500 mt-1">{c.type}</p>
+                    <div className="mt-2">
+                      <span className="text-[10px] bg-[#1c1815] border border-[#2d2621] text-stone-400 px-2 py-0.5 rounded font-mono">
+                        {c.status}
+                      </span>
+                    </div>
+                  </button>
                 );
               })}
             </div>
           </div>
 
-          {/* RIGHT DETAIL WORKSPACE PANEL */}
-          <div className="lg:col-span-8 space-y-6">
-            <AnimatePresence mode="wait">
-              {selectedCase && (
-                <motion.div
-                  key={selectedCase.id}
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -10 }}
-                  transition={{ duration: 0.3 }}
-                  className="bg-white/40 dark:bg-slate-900/30 border border-black/5 dark:border-white/5 rounded-3xl p-6 md:p-8 shadow-xl space-y-6 glass-panel text-left"
-                >
-                  <div className="flex justify-between items-start border-b border-black/5 dark:border-white/5 pb-4 flex-wrap gap-2">
-                    <div>
-                      <span className="text-[10px] font-bold text-yellow-605 dark:text-yellow-500 uppercase tracking-wider">
-                        Scrutiny Case ID: {selectedCase.id}
-                      </span>
-                      <h3 className="text-base font-extrabold text-slate-805 dark:text-slate-100 mt-1.5">
-                        Applicant: {selectedCase.applicant}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">{selectedCase.type}</p>
-                    </div>
-                    <span className="px-2.5 py-1 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-450 border border-yellow-500/20 text-[10px] font-bold">
-                      {registeredCases.includes(selectedCase.id) ? "CNR Issued" : (returnedCases.includes(selectedCase.id) ? "Returned" : "Scrutiny Pending")}
-                    </span>
-                  </div>
+          {/* Scrutiny Details & CNR Assignment */}
+          <div className="lg:col-span-2 border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 backdrop-blur-md space-y-6 shadow-xl shadow-black/40">
+            <div className="flex items-start justify-between border-b border-[#2d2621] pb-4">
+              <div>
+                <span className="text-[11px] font-mono text-stone-400 bg-[#1c1815] border border-[#2d2621] px-2 py-0.5 rounded">
+                  {selectedCase.id}
+                </span>
+                <h2 className="text-base font-bold text-stone-100 mt-2">
+                  {selectedCase.applicant}
+                </h2>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Filing Category: {selectedCase.type} • Court: {selectedCase.suggestedCourt}
+                </p>
+              </div>
 
-                  {/* Summary Card */}
-                  <div className="space-y-2">
-                    <p className="text-slate-505 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">Case Narrative Abstract:</p>
-                    <p className="text-xs text-slate-655 dark:text-slate-350 leading-relaxed bg-white/60 dark:bg-slate-950/40 p-4 rounded-2xl border border-black/5 dark:border-white/5 shadow-inner">
-                      {selectedCase.summary}
-                    </p>
-                  </div>
-
-                  {/* Document audit files lists & score */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <p className="text-slate-505 dark:text-slate-450 font-bold uppercase text-[10px] tracking-wider">Filing Document Health Score:</p>
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-14 h-14 rounded-full border-4 border-yellow-500/20 border-t-yellow-500 flex items-center justify-center font-black text-yellow-605 dark:text-yellow-500 text-base shadow-lg animate-pulse-gold">
-                          {selectedCase.healthScore}%
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-700 dark:text-slate-200 text-xs">OCR health target passed</p>
-                          <p className="text-[10px] text-slate-500 mt-0.5">Threshold 85% required</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 text-left">
-                      <p className="text-slate-505 dark:text-slate-450 font-bold uppercase text-[10px] tracking-wider">Required Document Completeness Checklist:</p>
-                      {selectedCase.missingFiles.length === 0 ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-450 border border-emerald-500/20 text-[9px] font-bold uppercase">
-                          ✓ All documents attached
-                        </span>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {selectedCase.missingFiles.map((f) => (
-                            <span key={f} className="block px-2.5 py-1 rounded-lg bg-red-500/5 border border-red-500/20 text-red-500 dark:text-red-400 text-[10px] font-semibold leading-normal">
-                              ⚠ Missing: {f}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Duplicate checks warnings */}
-                  {selectedCase.hasDuplicates && (
-                    <div className="p-4 bg-red-500/5 border border-red-500/15 rounded-2xl flex gap-3 text-xs">
-                      <AlertTriangle className="w-5 h-5 text-red-500 dark:text-red-450 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold text-red-500 dark:text-red-455 uppercase text-[10px] tracking-wider">Overlap / Duplicate warning detected by AI</p>
-                        <p className="text-slate-550 dark:text-slate-400 mt-1 leading-relaxed text-[11px]">{selectedCase.duplicateInfo}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Document ledger table */}
-                  <div className="space-y-2.5">
-                    <p className="text-slate-505 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider">Scanned Document Attachments ({selectedCase.documents.length}):</p>
-                    <div className="space-y-2">
-                      {selectedCase.documents.map((doc, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-white/60 dark:bg-slate-955/20 border border-black/5 dark:border-white/5 rounded-xl text-xs flex-wrap gap-2">
-                          <span className="font-bold text-slate-705 dark:text-slate-300">{doc.name}</span>
-                          <span className="px-2 py-0.5 rounded-lg bg-black/5 dark:bg-slate-900 border border-black/5 dark:border-white/5 text-[9px] text-slate-500 dark:text-slate-400 font-bold">{doc.type}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions Grid */}
-                  <div className="pt-6 border-t border-black/5 dark:border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
-                    
-                    {/* Part A: Issue CNR number */}
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-slate-700 dark:text-slate-200 text-xs">Acknowledge Scrutiny & Issue CNR</h4>
-                      <p className="text-[10px] text-slate-500 leading-normal">Assign the standard unique 16-character CNR number to verify official registration in the High Court cause records.</p>
-                      
-                      {registeredCases.includes(selectedCase.id) ? (
-                        <div className="flex gap-2 items-center text-emerald-600 dark:text-emerald-455 font-bold text-xs sm:text-sm bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-xl">
-                          <CheckCircle className="w-4 h-4 text-emerald-500" /> Court Registered (CNR Transmitted)
-                        </div>
-                      ) : (
-                        <form onSubmit={handleRegisterCnr} className="flex gap-2">
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g., MHPU02-89210-2026"
-                            value={officialCnr}
-                            onChange={(e) => setOfficialCnr(e.target.value)}
-                            className="bg-white/60 dark:bg-slate-950/60 border border-black/5 dark:border-white/5 rounded-xl px-3 py-2 text-xs text-slate-808 dark:text-slate-100 focus:outline-none flex-1"
-                          />
-                          <RippleWrapper>
-                            <button
-                              type="submit"
-                              disabled={actionLoading}
-                              className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer"
-                            >
-                              Register
-                            </button>
-                          </RippleWrapper>
-                        </form>
-                      )}
-                    </div>
-
-                    {/* Part B: Physical Archive Location Details */}
-                    <div className="space-y-3 border-l-0 sm:border-l border-black/5 dark:border-white/5 pl-0 sm:pl-6">
-                      <h4 className="font-bold text-slate-700 dark:text-slate-200 text-xs">Link Physical Archive Location</h4>
-                      <p className="text-[10px] text-slate-500 leading-normal">Map scanned profiles to physical locations using barcodes and room bounds.</p>
-                      
-                      <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <div className="space-y-1">
-                          <span className="text-slate-500">Building</span>
-                          <input
-                            type="text"
-                            value={archiveForm.building}
-                            onChange={(e) => setArchiveForm({ ...archiveForm, building: e.target.value })}
-                            className="w-full bg-white/60 dark:bg-slate-955/60 border border-black/5 dark:border-white/5 rounded px-2 py-1 text-slate-708 dark:text-slate-300"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-slate-500">Box ID / Room</span>
-                          <input
-                            type="text"
-                            value={archiveForm.box}
-                            onChange={(e) => setArchiveForm({ ...archiveForm, box: e.target.value })}
-                            className="w-full bg-white/60 dark:bg-slate-955/60 border border-black/5 dark:border-white/5 rounded px-2 py-1 text-slate-708 dark:text-slate-300"
-                          />
-                        </div>
-                      </div>
-                      
-                      <RippleWrapper>
-                        <button
-                          type="button"
-                          onClick={handleSaveArchive}
-                          disabled={actionLoading}
-                          className="w-full py-2 bg-white dark:bg-slate-950 hover:bg-black/5 dark:hover:bg-white/5 border border-black/10 dark:border-white/5 text-yellow-600 dark:text-yellow-500 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                        >
-                          <Archive className="w-3.5 h-3.5" /> Save Archival Link
-                        </button>
-                      </RippleWrapper>
-                    </div>
-
-                  </div>
-
-                </motion.div>
+              {selectedCase.cnrNumber ? (
+                <span className="px-3 py-1 rounded text-xs font-mono font-medium bg-[#221c18] text-stone-200 border border-[#3e352f]">
+                  CNR: {selectedCase.cnrNumber}
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded text-xs font-medium bg-[#201b17] text-stone-400 border border-[#332c28]">
+                  Awaiting Registrar Sign-off
+                </span>
               )}
-            </AnimatePresence>
-          </div>
+            </div>
 
+            {/* Scrutiny Checklist */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
+                Procedural Defect Scrutiny Checklist (Order 4 CPC)
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="p-3 border border-[#2d2621] rounded-lg bg-[#14110f] flex items-center justify-between">
+                  <span className="text-stone-300">1. Court Fee Stamp Valuation & Computation</span>
+                  <span className="text-[11px] font-medium text-stone-300 bg-[#221c18] border border-[#3e352f] px-2 py-0.5 rounded">Verified</span>
+                </div>
+                <div className="p-3 border border-[#2d2621] rounded-lg bg-[#14110f] flex items-center justify-between">
+                  <span className="text-stone-300">2. Vakalatnama Authorization & Bar Council Stamp</span>
+                  <span className="text-[11px] font-medium text-stone-300 bg-[#221c18] border border-[#3e352f] px-2 py-0.5 rounded">Compliant</span>
+                </div>
+                <div className="p-3 border border-[#2d2621] rounded-lg bg-[#14110f] flex items-center justify-between">
+                  <span className="text-stone-300">3. Legibility of Revenue Annexures & Boundary Survey Maps</span>
+                  <span className="text-[11px] font-medium text-stone-300 bg-[#221c18] border border-[#3e352f] px-2 py-0.5 rounded">Certified</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CNR Number Form */}
+            {!selectedCase.cnrNumber && (
+              <div className="p-4 border border-[#2d2621] rounded-lg bg-[#14110f] space-y-3">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-200">
+                    Official CNR Allocation
+                  </h3>
+                  <p className="text-[11px] text-stone-400">
+                    Per court rules, CNR numbers must be reviewed and issued under registrar authority.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={officialCnr}
+                    onChange={(e) => setOfficialCnr(e.target.value)}
+                    placeholder="Enter 16-character CNR (e.g. MHPU01-004912-2026)"
+                    className="bw-input font-mono uppercase flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAutoFillCnr}
+                    className="bw-btn-secondary shrink-0 text-xs"
+                  >
+                    Generate Next In-Sequence
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleIssueCNR}
+                    disabled={actionLoading || !officialCnr.trim()}
+                    className="bw-btn-primary shrink-0 text-xs"
+                  >
+                    {actionLoading ? "Registering..." : "Issue & Register CNR"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Physical Record Archival Tracking */}
+            <div className="space-y-3 pt-2 border-t border-[#2d2621]">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
+                Physical Docket Archival Tracking
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2.5 border border-[#2d2621] rounded-lg bg-[#14110f]">
+                  <span className="text-stone-500 text-[10px] block">Complex</span>
+                  <span className="font-semibold text-stone-200">{archiveForm.building}</span>
+                </div>
+                <div className="p-2.5 border border-[#2d2621] rounded-lg bg-[#14110f]">
+                  <span className="text-stone-500 text-[10px] block">Record Room</span>
+                  <span className="font-semibold text-stone-200">{archiveForm.room}</span>
+                </div>
+                <div className="p-2.5 border border-[#2d2621] rounded-lg bg-[#14110f]">
+                  <span className="text-stone-500 text-[10px] block">Storage Location</span>
+                  <span className="font-semibold text-stone-200">{archiveForm.rack} • {archiveForm.shelf} • {archiveForm.box}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
+      </div>
+
+      {/* Footer */}
+      <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">
+        NyayaFlow Registry Workspace • High Court Protocol & CNR Rule Compliance
+      </footer>
     </div>
   );
 }

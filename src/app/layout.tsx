@@ -1,32 +1,23 @@
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import AssistantSidebar from "@/components/assistant-sidebar";
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "NyayaFlow AI | Indian Judicial Intelligent Assistance Platform",
-  description: "An intelligent, human-in-the-loop judicial assistant platform supporting citizens, advocates, police officers, registrars, and judges in India.",
-  keywords: [
-    "Indian Judiciary",
-    "Legal AI",
-    "Judicial Workflow",
-    "NyayaFlow",
-    "CNR Case Tracking",
-    "BNS Section Advisor",
-    "Court Case Management India"
-  ],
-  authors: [{ name: "NyayaFlow AI Team" }],
+  title: "NyayaFlow | Court & Case Management Platform",
+  description:
+    "Electronic case filing, registry scrutiny, and daily cause-list management portal.",
 };
 
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -35,9 +26,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${outfit.variable} h-full antialiased dark`}>
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 selection:bg-yellow-600/30 selection:text-yellow-200">
-        {children}
+    <html lang="en" className={`${inter.className} h-full dark`}>
+      <body className="min-h-full flex flex-col text-neutral-100 relative antialiased bg-[#12100e]">
+        {/* Courtroom Law Library Background (Fixed Layer) */}
+        <div
+          className="fixed inset-0 -z-10 pointer-events-none bg-cover bg-center bg-no-repeat bg-fixed opacity-40"
+          style={{
+            backgroundImage: `linear-gradient(180deg, rgba(18, 16, 14, 0.88) 0%, rgba(18, 16, 14, 0.95) 100%), url('/images/courtroom-bg.jpg')`,
+            backgroundAttachment: "fixed",
+          }}
+        />
+
+        <div className="relative z-10 flex-1 flex flex-col">
+          {children}
+        </div>
+
+        {/* Floating Court Assistant */}
+        <AssistantSidebar />
       </body>
     </html>
   );

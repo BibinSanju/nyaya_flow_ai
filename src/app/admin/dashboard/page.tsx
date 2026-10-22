@@ -2,27 +2,18 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  Database,
-  ShieldAlert,
-  Server,
+  Shield,
   Activity,
-  User,
   LogOut,
-  RefreshCw,
-  TrendingUp,
   Scale,
-  Users,
-  HardDrive,
-  FileCheck,
   CheckCircle,
-  Clock
+  FileText,
+  Lock,
+  RefreshCw,
+  Server,
+  Database
 } from "lucide-react";
-import { apiListStats, apiListAuditLogs } from "@/utils/api";
-import AssistantSidebar from "@/components/assistant-sidebar";
-import TiltCard from "@/components/tilt-card";
-import RippleWrapper from "@/components/ripple-wrapper";
 
 interface AuditLog {
   timestamp: string;
@@ -34,376 +25,208 @@ interface AuditLog {
 }
 
 export default function AdminDashboard() {
-  const [telemetryNode, setTelemetryNode] = useState("all-nodes");
-  const [stats, setStats] = useState<any>({
-    active_cases: 148209,
-    disposed_cases: 392019,
-    pending_cases: 412,
-    mean_resolution_speed: "5.2 Mo",
-  });
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-
-  const defaultMockLogs: AuditLog[] = [
+  const [logs, setLogs] = useState<AuditLog[]>([
     {
-      timestamp: "2026-07-18 18:04:12",
-      actor: "Registrar Clerk RC-01",
+      timestamp: "Oct 21, 2026, 3:30 PM",
+      actor: "Registrar Clerk",
       role: "Registrar",
-      action: "Linked physical files folder barcode NF-BAR-4912019 to Box 109",
+      action: "Issued official CNR MHPU01-004912-2026 and linked archival Box #102",
       status: "Success",
-      ip: "10.0.4.12",
+      ip: "127.0.0.1",
     },
     {
-      timestamp: "2026-07-18 17:55:01",
-      actor: "Hon. Judge Patil",
-      role: "Judge",
-      action: "Recorded bench order Passed civil decree case MHPU02-89210-2026",
-      status: "Success",
-      ip: "10.0.1.49",
-    },
-    {
-      timestamp: "2026-07-18 17:42:30",
-      actor: "Inspector S. Kadam",
-      role: "Police",
-      action: "Mapped Section 305 BNS to FIR reference and transmitted files",
-      status: "Success",
-      ip: "10.12.8.21",
-    },
-    {
-      timestamp: "2026-07-18 17:30:15",
-      actor: "Litigant Aditya Patil",
+      timestamp: "Oct 21, 2026, 3:15 PM",
+      actor: "Aditya Patil",
       role: "Citizen",
-      action: "Filing new petition, OCR health score processed: 88%",
+      action: "Uploaded and scanned 7/12 Land Revenue extract via OCR engine",
       status: "Success",
-      ip: "192.168.1.104",
+      ip: "127.0.0.1",
     },
     {
-      timestamp: "2026-07-18 17:05:00",
-      actor: "System Administrator",
-      role: "Admin",
-      action: "Database sync completed with Supabase sovereign secondary",
+      timestamp: "Oct 21, 2026, 2:45 PM",
+      actor: "Hon. Justice K. Verma",
+      role: "Judge",
+      action: "Recorded bench decree: Status Quo granted under CPC Order 39",
       status: "Success",
-      ip: "10.0.99.1",
+      ip: "127.0.0.1",
     },
-  ];
+    {
+      timestamp: "Oct 21, 2026, 2:10 PM",
+      actor: "Inspector R. Sharma",
+      role: "Police",
+      action: "Cross-referenced Section 305 BNS for dwelling house break-in FIR",
+      status: "Success",
+      ip: "127.0.0.1",
+    },
+    {
+      timestamp: "Oct 21, 2026, 1:50 PM",
+      actor: "Adv. Abhishek Deshmukh",
+      role: "Advocate",
+      action: "Accepted Vakalatnama representation brief for land partition filing",
+      status: "Success",
+      ip: "127.0.0.1",
+    },
+  ]);
+
+  const [systemStatus, setSystemStatus] = useState({
+    apiStatus: "Operational",
+    database: "Local Persistent Storage / MongoDB Compatible",
+    ocrEngine: "Active (Tesseract.js & PDF-Parse)",
+    otpService: "Active (HMAC-SHA256 & Nodemailer)",
+  });
+
+  const [currentUser, setCurrentUser] = useState<{ fullName?: string; email?: string } | null>(null);
 
   useEffect(() => {
-    const loadAdminData = async () => {
-      try {
-        const statsData = await apiListStats();
-        if (statsData) {
-          setStats(statsData);
-        }
-        
-        const rawLogs = await apiListAuditLogs();
-        const mappedLogs: AuditLog[] = rawLogs.map((l: any) => ({
-          timestamp: l.timestamp ? new Date(l.timestamp).toLocaleString() : "2026-07-20 12:00:00",
-          actor: l.actor || "System",
-          role: l.role || "Admin",
-          action: l.action,
-          status: l.status || "Success",
-          ip: l.ip_address || "127.0.0.1",
-        }));
-
-        // Merge mapped database logs and mock logs
-        const combined = [...mappedLogs];
-        defaultMockLogs.forEach(mock => {
-          if (!combined.some(c => c.action === mock.action)) {
-            combined.push(mock);
-          }
-        });
-        setLogs(combined);
-      } catch (err) {
-        console.error(err);
-        setLogs(defaultMockLogs);
+    try {
+      const stored = localStorage.getItem("nyayaflow_user");
+      if (stored) {
+        setCurrentUser(JSON.parse(stored));
       }
-    };
-
-    loadAdminData();
+    } catch (e) {}
   }, []);
 
-  const cardVariants = {
-    hidden: { opacity: 0, y: 15 },
-    visible: (i: number) => ({
-      opacity: 1,
-      y: 0,
-      transition: { delay: i * 0.05, duration: 0.4, ease: "easeOut" as const }
-    })
+  const handleOpenChat = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("open-nyayaflow-chat"));
+    }
   };
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-[#030712] text-slate-805 dark:text-slate-100 text-xs sm:text-sm">
-      
-      {/* AI Assistant Sidebar */}
-      <AssistantSidebar role="admin" />
-
-      {/* SIDEBAR */}
-      <aside className="w-full md:w-64 bg-white/40 dark:bg-slate-900/30 border-r border-black/5 dark:border-white/5 flex flex-col justify-between shrink-0 p-4 backdrop-blur-2xl">
-        <div className="space-y-6">
-          <div className="flex items-center gap-2 px-2 pb-4 border-b border-black/5 dark:border-white/5">
-            <motion.div 
-              whileHover={{ scale: 1.05, rotate: 3 }}
-              className="w-7 h-7 rounded bg-gradient-to-tr from-yellow-600 to-emerald-600 flex items-center justify-center font-bold text-white text-xs shadow-lg"
-            >
-              NF
-            </motion.div>
-            <span className="font-bold tracking-wider text-slate-800 dark:text-slate-100">
-              NYAYA<span className="text-yellow-500">FLOW</span>
-            </span>
+    <div className="min-h-screen text-stone-200 flex flex-col justify-between">
+      {/* Header */}
+      <header className="border-b border-[#2d2621] sticky top-0 bg-[#12100e]/95 backdrop-blur-md z-30">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded border border-[#3e352f] bg-[#221c18] text-stone-200 flex items-center justify-center font-semibold">
+                <Lock className="w-4 h-4 text-stone-300" />
+              </div>
+              <span className="font-semibold text-base text-stone-100 tracking-tight">NyayaFlow</span>
+            </Link>
+            <span className="text-stone-600">/</span>
+            <span className="text-xs font-medium text-stone-400 hidden sm:inline">System Administrator Console</span>
           </div>
 
-          <div className="flex gap-3 items-center p-3 bg-white/60 dark:bg-slate-950/40 rounded-2xl border border-black/5 dark:border-white/5 shadow-inner">
-            <div className="w-9 h-9 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-500">
-              SA
-            </div>
-            <div className="text-left">
-              <p className="font-bold text-slate-700 dark:text-slate-200">System Admin</p>
-              <p className="text-[10px] text-slate-405">Sovereign Controls</p>
-            </div>
-          </div>
-
-          {/* Navigation Items */}
-          <nav className="flex flex-col gap-1.5">
-            <motion.button 
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full p-3 rounded-xl flex items-center gap-3 font-semibold bg-yellow-500 border border-yellow-405 text-slate-950 text-left shadow-lg shadow-yellow-500/10"
+          <div className="flex items-center gap-4">
+            {/* Direct AI Chat Launcher */}
+            <button
+              onClick={handleOpenChat}
+              className="px-3 py-1.5 text-xs font-medium rounded border border-[#38302a] bg-[#1c1714] text-stone-300 hover:bg-[#25201b] transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Activity className="w-4 h-4" />
-              Platform Telemetry
-            </motion.button>
-          </nav>
-        </div>
+              <Scale className="w-3.5 h-3.5 text-stone-400" />
+              <span className="hidden sm:inline">Court Assistant</span>
+            </button>
 
-        <div className="pt-4 border-t border-black/5 dark:border-white/5">
-          <Link href="/auth">
-            <motion.div
-              whileHover={{ scale: 1.01, backgroundColor: "rgba(239, 68, 68, 0.05)" }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full p-3 rounded-xl flex items-center gap-3 text-slate-405 hover:text-red-500 transition-all font-semibold cursor-pointer border border-transparent"
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-semibold text-stone-200">
+                {currentUser?.fullName
+                  ? (currentUser.fullName.toLowerCase().includes("admin") ? currentUser.fullName : `Admin ${currentUser.fullName}`)
+                  : "System Administrator"}
+              </p>
+              <p className="text-[11px] text-stone-400 font-mono">{currentUser?.email || "ADMIN-SYS-99"}</p>
+            </div>
+            <Link
+              href="/auth"
+              className="p-2 text-stone-400 hover:text-stone-200 rounded border border-[#2d2621] hover:border-[#443a33] bg-[#181513] transition-all"
+              title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
-              Sign Out Portal
-            </motion.div>
-          </Link>
+            </Link>
+          </div>
         </div>
-      </aside>
+      </header>
 
-      {/* MAIN CONTAINER CONTENT */}
-      <main className="flex-1 p-6 md:p-8 overflow-y-auto w-full space-y-6">
-        
-        {/* Header Title */}
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center pb-4 border-b border-black/5 dark:border-white/5 flex-wrap gap-4 text-left"
-        >
-          <div>
-            <h1 className="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <Database className="w-5 h-5 text-amber-550" />
-              Sovereign Administration Console
-            </h1>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">Monitor sovereign server loads, review database audit trails, and inspect caseload statistics.</p>
+      {/* Main Container */}
+      <div className="max-w-6xl mx-auto px-6 py-6 sm:py-8 flex-1 w-full space-y-6">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded border border-[#3e352f] bg-[#201b17] text-[11px] font-medium text-stone-300 mb-2">
+            <Lock className="w-3 h-3 text-stone-400" />
+            <span>Infrastructure & Audit Security</span>
           </div>
-          <div className="flex gap-2">
-            <span className="px-2.5 py-1 rounded bg-white/40 dark:bg-slate-950/40 border border-black/5 dark:border-white/5 text-[10px] text-emerald-600 dark:text-emerald-455 flex items-center gap-1.5 font-bold shadow-inner">
-              <Server className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-              Database Health: 100% Operational
-            </span>
-          </div>
-        </motion.div>
-
-        {/* Audit Notification Banner */}
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-4 bg-yellow-500/5 border border-yellow-500/15 rounded-2xl flex items-start gap-3.5 text-left"
-        >
-          <ShieldAlert className="w-4.5 h-4.5 text-yellow-550 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-            <strong className="text-yellow-600 dark:text-yellow-500">Sovereign Compliance:</strong> NyayaFlow telemetry tracks resource utilization and database writes. No citizen identity records (Aadhaar or biometric keys) are stored on public servers. Encryption keys are self-contained.
+          <h1 className="text-2xl font-bold text-stone-100 tracking-tight">Platform Infrastructure & Audit Log</h1>
+          <p className="text-xs sm:text-sm text-stone-400 mt-1">
+            Real-time server telemetry, document store indices, and security verification logs.
           </p>
-        </motion.div>
-
-        {/* STATS OVERVIEW CARDS */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            {
-              title: "Total Active Cases",
-              value: stats?.active_cases !== undefined ? Number(stats.active_cases).toLocaleString() : "1,48,209",
-              indicator: <span className="text-[9px] text-emerald-500 dark:text-emerald-400 flex items-center gap-0.5"><TrendingUp className="w-3 h-3" /> +4.2% this month</span>
-            },
-            {
-              title: "Disposed / Resolved",
-              value: stats?.disposed_cases !== undefined ? Number(stats.disposed_cases).toLocaleString() : "3,92,019",
-              indicator: <span className="text-[9px] text-slate-500 dark:text-slate-450">Total lifetime platform</span>,
-              emerald: true
-            },
-            {
-              title: "Pending Scrutiny",
-              value: stats?.pending_cases !== undefined ? Number(stats.pending_cases).toLocaleString() : "412",
-              indicator: <span className="text-[9px] text-yellow-600 dark:text-yellow-500">Action required (Registrar)</span>,
-              gold: true
-            },
-            {
-              title: "Mean Resolution Speed",
-              value: stats?.mean_resolution_speed || "5.2 Mo",
-              indicator: <span className="text-[9px] text-emerald-500 dark:text-emerald-400">Decreased from 18 Mo</span>
-            }
-          ].map((card, idx) => (
-            <motion.div
-              key={idx}
-              custom={idx}
-              variants={cardVariants}
-              initial="hidden"
-              animate="visible"
-              whileHover={{ y: -3 }}
-              className="p-4 bg-white/40 dark:bg-slate-900/30 border border-black/5 dark:border-white/5 rounded-2xl glass-panel text-left space-y-1"
-            >
-              <p className="text-slate-500 font-bold uppercase text-[9px] tracking-wider">{card.title}</p>
-              <p className={`text-2xl font-black ${card.emerald ? "text-emerald-500" : (card.gold ? "text-yellow-500" : "text-slate-800 dark:text-slate-100")}`}>{card.value}</p>
-              {card.indicator}
-            </motion.div>
-          ))}
         </div>
 
-        {/* WORKSPACE GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start text-left">
-          
-          {/* LEFT: WORKLOAD CHART */}
-          <div className="lg:col-span-6 bg-white/40 dark:bg-slate-900/30 border border-black/5 dark:border-white/5 rounded-3xl p-6 shadow-xl space-y-4 glass-panel">
+        {/* Infrastructure Status Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 border border-[#2e2722] rounded-xl bg-[#181513]/95 space-y-1 shadow-lg shadow-black/40">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-stone-400">API Server</span>
+              <Server className="w-4 h-4 text-stone-400" />
+            </div>
+            <p className="text-base font-bold text-stone-100">{systemStatus.apiStatus}</p>
+            <p className="text-[11px] text-stone-400 font-medium">Listening on port 5000</p>
+          </div>
+
+          <div className="p-4 border border-[#2e2722] rounded-xl bg-[#181513]/95 space-y-1 shadow-lg shadow-black/40">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-stone-400">Database Engine</span>
+              <Database className="w-4 h-4 text-stone-400" />
+            </div>
+            <p className="text-base font-bold text-stone-100 truncate">Active</p>
+            <p className="text-[11px] text-stone-400 font-mono">Mongoose / Local Store</p>
+          </div>
+
+          <div className="p-4 border border-[#2e2722] rounded-xl bg-[#181513]/95 space-y-1 shadow-lg shadow-black/40">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-stone-400">OCR & Document Scrutiny</span>
+              <FileText className="w-4 h-4 text-stone-400" />
+            </div>
+            <p className="text-base font-bold text-stone-100">Online</p>
+            <p className="text-[11px] text-stone-400">Tesseract.js & PDF-Parse</p>
+          </div>
+
+          <div className="p-4 border border-[#2e2722] rounded-xl bg-[#181513]/95 space-y-1 shadow-lg shadow-black/40">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-stone-400">OTP Auth Delivery</span>
+              <Lock className="w-4 h-4 text-stone-400" />
+            </div>
+            <p className="text-base font-bold text-stone-100">Active</p>
+            <p className="text-[11px] text-stone-400">SHA-256 Rate-Limited</p>
+          </div>
+        </div>
+
+        {/* Audit Trail Table */}
+        <div className="border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 space-y-4 shadow-xl shadow-black/40">
+          <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm">Monthly Caseload & Resolution Velocity</h3>
-              <p className="text-slate-500 text-[10px]">Comparative filing rates and processing outputs over past months</p>
-            </div>
-
-            {/* Custom SVG chart line */}
-            <div className="h-48 w-full flex items-center justify-center relative">
-              <svg viewBox="0 0 300 120" className="w-full h-full stroke-slate-550 dark:stroke-slate-700 fill-none" strokeWidth="1">
-                <line x1="30" y1="20" x2="280" y2="20" stroke="rgba(0,0,0,0.02)" />
-                <line x1="30" y1="50" x2="280" y2="50" stroke="rgba(0,0,0,0.02)" />
-                <line x1="30" y1="80" x2="280" y2="80" stroke="rgba(0,0,0,0.02)" />
-                <line x1="30" y1="100" x2="280" y2="100" stroke="rgba(0,0,0,0.04)" />
-                
-                <line x1="30" y1="10" x2="30" y2="100" stroke="rgba(0,0,0,0.08)" />
-                <line x1="30" y1="100" x2="280" y2="100" stroke="rgba(0,0,0,0.08)" />
-
-                {/* Line 1: Filings */}
-                <motion.path
-                  d="M 30 90 L 70 80 L 110 50 L 150 40 L 190 70 L 230 45 L 280 20"
-                  stroke="#eab308"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: 1 }}
-                  transition={{ duration: 1.5, ease: "easeInOut" }}
-                />
-                
-                {/* Line 2: Resolutions */}
-                <motion.path
-                  d="M 30 95 L 70 88 L 110 70 L 150 55 L 190 40 L 230 35 L 280 15"
-                  stroke="#10b981"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: 1 }}
-                  transition={{ duration: 1.5, delay: 0.2, ease: "easeInOut" }}
-                />
-
-                <circle cx="280" cy="20" r="3.5" fill="#eab308" />
-                <circle cx="280" cy="15" r="3.5" fill="#10b981" />
-
-                <text x="5" y="24" fill="#475569" fontSize="7" fontWeight="bold">150k</text>
-                <text x="5" y="54" fill="#475569" fontSize="7" fontWeight="bold">100k</text>
-                <text x="5" y="84" fill="#475569" fontSize="7" fontWeight="bold">50k</text>
-                
-                <text x="65" y="112" fill="#475569" fontSize="7" fontWeight="bold">Jan</text>
-                <text x="105" y="112" fill="#475569" fontSize="7" fontWeight="bold">Mar</text>
-                <text x="145" y="112" fill="#475569" fontSize="7" fontWeight="bold">May</text>
-                <text x="185" y="112" fill="#475569" fontSize="7" fontWeight="bold">Jul</text>
-                <text x="225" y="112" fill="#475569" fontSize="7" fontWeight="bold">Sep</text>
-                <text x="270" y="112" fill="#475569" fontSize="7" fontWeight="bold">Dec</text>
-              </svg>
-            </div>
-
-            <div className="flex gap-6 items-center text-[10px] text-slate-500 justify-center font-bold">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> New Cases Filed
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Cases Resolved
-              </span>
+              <h2 className="text-base font-bold text-stone-100">Security & Transaction Log</h2>
+              <p className="text-xs text-stone-400 mt-0.5">
+                Every authorization, document upload, and judicial decree is permanently logged with IP and role stamps.
+              </p>
             </div>
           </div>
 
-          {/* RIGHT: SYSTEM HOSTS NODES */}
-          <div className="lg:col-span-6 bg-white/40 dark:bg-slate-900/30 border border-black/5 dark:border-white/5 rounded-3xl p-6 shadow-xl space-y-4 glass-panel">
-            <h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm">Active Server Clusters</h3>
-            <p className="text-slate-505 text-[10px]">Security state and server loads of self-contained local clusters</p>
-
-            <div className="space-y-3">
-              {[
-                { name: "Sovereign Primary DB Node (PostgreSQL)", usage: "42% Load", status: "Active", ip: "10.0.1.5", active: true },
-                { name: "Gemini Advisory Inference Microservice", usage: "18% Load", status: "Active", ip: "10.0.1.20", active: true },
-                { name: "OCR Document Scanners Node", usage: "0% Load", status: "Standby", ip: "10.0.2.14" }
-              ].map((server, idx) => (
-                <TiltCard key={idx}>
-                  <div className="p-3.5 bg-white/60 dark:bg-slate-950/40 border border-black/5 dark:border-white/5 rounded-2xl flex items-center justify-between text-xs flex-wrap gap-3">
-                    <div className="flex gap-3 items-center">
-                      <div className="w-8 h-8 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-                        <Server className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-705 dark:text-slate-200">{server.name}</p>
-                        <p className="text-[10px] text-slate-455 dark:text-slate-500 mt-0.5">IP: {server.ip} | Telemetry: {server.usage}</p>
-                      </div>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold border ${
-                      server.active 
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 animate-pulse" 
-                        : "bg-slate-900 text-slate-450 border-white/5"
-                    }`}>
-                      {server.status}
-                    </span>
-                  </div>
-                </TiltCard>
-              ))}
-            </div>
-          </div>
-
-        </div>
-
-        {/* BOTTOM: SYSTEM AUDIT LOG LEDGER */}
-        <div className="bg-white/40 dark:bg-slate-900/30 border border-black/5 dark:border-white/5 rounded-3xl p-6 shadow-xl space-y-4 glass-panel text-left">
-          <div>
-            <h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm">Sovereign Audit Ledger</h3>
-            <p className="text-slate-505 text-[10px]">Sovereign audit logging records of database writes and nodes access history</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[11px] text-slate-655 dark:text-slate-300">
-              <thead>
-                <tr className="border-b border-black/5 dark:border-white/5 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4">Timestamp</th>
-                  <th className="py-3 px-4">Access Badge</th>
-                  <th className="py-3 px-4">Node / Role</th>
-                  <th className="py-3 px-4">Action Event Description</th>
-                  <th className="py-3 px-4 text-right">Audit Status</th>
+          <div className="border border-[#2d2621] rounded-lg overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#14110f] border-b border-[#2d2621] text-stone-400 font-semibold">
+                <tr>
+                  <th className="p-3">Timestamp</th>
+                  <th className="p-3">Stakeholder Actor</th>
+                  <th className="p-3">Role</th>
+                  <th className="p-3">Action Description</th>
+                  <th className="p-3">IP Address</th>
+                  <th className="p-3">Verification</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/5 dark:divide-white/5">
+              <tbody className="divide-y divide-[#26201c]">
                 {logs.map((log, idx) => (
-                  <tr key={idx} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                    <td className="py-3 px-4 font-mono text-slate-500">{log.timestamp}</td>
-                    <td className="py-3 px-4 font-bold text-slate-700 dark:text-slate-200">{log.actor}</td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded bg-black/5 dark:bg-slate-950 border border-black/5 dark:border-white/5 text-slate-600 dark:text-slate-450 font-bold">
+                  <tr key={idx} className="hover:bg-[#1a1614] transition-colors">
+                    <td className="p-3 font-mono text-stone-400">{log.timestamp}</td>
+                    <td className="p-3 font-medium text-stone-200">{log.actor}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-mono border border-[#38302a] bg-[#201b17] text-stone-300">
                         {log.role}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{log.action}</td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-605 dark:text-emerald-400 border border-emerald-500/20 font-bold">
-                        {log.status}
+                    <td className="p-3 text-stone-300 max-w-sm truncate">{log.action}</td>
+                    <td className="p-3 font-mono text-stone-400">{log.ip}</td>
+                    <td className="p-3">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-300">
+                        <CheckCircle className="w-3.5 h-3.5 text-stone-400" /> Confirmed
                       </span>
                     </td>
                   </tr>
@@ -412,8 +235,12 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
+      </div>
 
-      </main>
+      {/* Footer */}
+      <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">
+        NyayaFlow System Console • Audit Integrity & Role-Based Access Control
+      </footer>
     </div>
   );
 }

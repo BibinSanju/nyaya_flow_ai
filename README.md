@@ -1,13 +1,15 @@
-# NyayaFlow AI ⚖️
+# NyayaFlow ⚖️
 
-**"Justice delayed is often justice denied. NyayaFlow ensures that justice begins with the right filing, the right guidance, and the right information."**
+> **Indian Judicial Workflow & Document Scrutiny Platform**  
+> *Under Human Authority. Structured legal case management for litigants, advocates, police, registrars, and judges.*
 
-NyayaFlow AI is an intelligent judicial workflow platform designed to modernize India's legal ecosystem by simplifying petition filing, digitizing judicial records, enabling AI-assisted document verification, and improving collaboration between citizens, advocates, police officers, registrars, and judges.
+NyayaFlow is an intelligent, full-stack judicial workflow management platform designed for the Indian legal ecosystem. It connects citizens, advocates, police officers, registrars, and judges with structured e-filing, real document verification, OCR text extraction, OTP authentication, and an Express/Node.js backend with MongoDB integration.
 
 Rather than replacing legal professionals, NyayaFlow acts as an intelligent assistant that reduces paperwork, minimizes procedural errors, and accelerates administrative workflows while ensuring that all legal decisions remain under human authority.
 ---
 **Vision Statement**
 
+<<<<<<< Updated upstream
 "NyayaFlow envisions an India where every citizen can access justice without being overwhelmed by legal complexity, unnecessary paperwork, or procedural delays. By combining Artificial Intelligence with human judicial authority, we aim to build a transparent, efficient, and citizen-centric legal ecosystem."
 ---
 **Problems We Solve**
@@ -168,9 +170,13 @@ often use disconnected systems.
 NyayaFlow connects all stakeholders through one unified platform.
 ---
 ## 🏛️ Project Architecture & Stakeholder Roles
+=======
+## 🏛️ Stakeholder Portals
+>>>>>>> Stashed changes
 
-NyayaFlow AI connects six independent stakeholders inside a single unified pipeline:
+NyayaFlow connects six primary judicial stakeholders:
 
+<<<<<<< Updated upstream
 ```mermaid
 graph TD
     A[Citizen] -->|Filing / Voice Input| B[AI Scrutiny & Advocate Match]
@@ -240,109 +246,156 @@ T -->|Yes| U[Close Case File]
 4. **Registrar**: Reviews case checklists, links physical archival locations (building, room, shelf, box) to digitized profiles, and assigns official court CNR numbers.
 5. **Presiding Judge**: Inspects daily cause lists, accesses AI-generated brief summaries, maps precedents, and signs bench orders.
 6. **Administrator**: Audits immutable log tables, tracks district caseload density maps, and monitors server cluster telemetry.
+=======
+1. **Citizen / Litigant** (`/citizen/dashboard`):
+   - Regional language grievance filing narrative & voice input.
+   - Statutory acts and document requirement checklists.
+   - Real drag-and-drop document upload (PDF, JPG, PNG) and camera scanning.
+   - Live tracking of registered case dossiers by CNR number.
+2. **Advocate Counsel** (`/advocate/dashboard`):
+   - Review incoming client inquiries and statutory briefs.
+   - Inspect client annexures prior to registry scrutiny.
+   - Confirm and sign Vakalatnama representation (Rule 4 BCI).
+3. **Police Officer** (`/police/dashboard`):
+   - Input First Information Report (FIR) narratives.
+   - Bharatiya Nyaya Sanhita (BNS) section recommendations with officer verification.
+   - Attach digital evidence and scanned chargesheets.
+4. **Court Registrar** (`/registrar/dashboard`):
+   - Order 4 CPC procedural defect scrutiny verification.
+   - Assign official 16-character Case Number Record (CNR) numbers.
+   - Log physical court archive room, shelf, and box storage locations.
+5. **Presiding Judge** (`/judge/dashboard`):
+   - Access daily cause lists and chronological hearing digests.
+   - Review applicable statutory sections and precedent citations.
+   - Record and sign reasoned bench decrees and interim injunctions (CPC Order 39).
+6. **System Administrator** (`/admin/dashboard`):
+   - Monitor backend API health, OCR engine status, and database connections.
+   - Immutable security and transactional audit trail logging.
+>>>>>>> Stashed changes
 
 ---
 
-## ⚙️ Tech Stack & Dependencies
+## 🎨 Clean Black-and-White Theme
 
-*   **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Framer Motion, Lucide icons, Recharts.
-*   **Backend**: Python, FastAPI, Uvicorn, Google-GenerativeAI (Gemini SDK), python-dotenv.
-*   **Database**: PostgreSQL / Supabase, Row-level Security (RLS).
-*   **OCR**: PyTesseract, pdf2image (scanned file audits).
+- **Primary background:** Pure White (`#FFFFFF`)
+- **Primary text:** Pitch Black (`#000000`)
+- **Secondary background:** Light Gray (`#F5F5F5`)
+- **Borders:** Soft Gray (`#E5E5E5`)
+- **Buttons:** Black background with white text, dark gray hover
+- **Error Callouts:** Red (`#DC2626`)
+- **Success Callouts:** Green (`#16A34A`)
+- **Typography:** Inter sans-serif for optimal legibility across mobile, tablet, and desktop.
+- Unnecessary decorative animations, gradients, and promotional AI fluff have been completely removed.
 
 ---
 
-## 📂 Folder Structure
+## ⚙️ Tech Stack
+
+* **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Lucide Icons.
+* **Backend:** Node.js, Express.js.
+* **Database:** MongoDB with Mongoose (with automated resilient local storage fallback).
+* **File Upload:** Multer with strict MIME validation (PDF, JPG, JPEG, PNG), 15 MB size limit, and sanitized server-side filenames.
+* **OCR & Scanning:** `pdf-parse` (digital PDF direct text extraction) & `tesseract.js` (optical character recognition for scanned images).
+* **Authentication:** Cryptographic OTP (HMAC-SHA256, 10-minute expiry, 60s cooldown timer, rate limiting, and Nodemailer SMTP delivery integration).
+
+---
+
+## 📂 Project Structure
 
 ```text
 nyaya_flow/
 ├── backend/
-│   ├── db/
-│   │   └── schema.sql        # Postgres database migrations
+│   ├── config/
+│   │   └── database.js       # Mongoose connection & local persistence fallback
+│   ├── controllers/
+│   │   ├── authController.js     # OTP send, verify, login, register, logout
+│   │   ├── documentController.js # Upload, list, retrieve, stream download, delete
+│   │   └── scanController.js     # OCR scan trigger, scan-status, scan-result
+│   ├── middleware/
+│   │   ├── authMiddleware.js     # JWT token verification
+│   │   ├── uploadMiddleware.js   # Multer storage, mime verification, size limits
+│   │   └── errorMiddleware.js    # Centralized JSON error handling
+│   ├── models/
+│   │   ├── User.js               # User accounts & roles
+│   │   ├── Document.js           # Document metadata, storage path, scan results
+│   │   ├── OTP.js                # Hashed OTPs, expiry, rate limiting
+│   │   └── storageHelper.js      # Resilient local JSON storage engine
+│   ├── routes/
+│   │   ├── authRoutes.js         # /api/auth/*
+│   │   ├── documentRoutes.js     # /api/documents/*
+│   │   └── courtRoutes.js        # Court petitions, advocates, classification
 │   ├── services/
-│   │   └── gemini.py         # Gemini AI completions & mock failover logic
-│   ├── main.py               # FastAPI application routing & CORS middlewares
-│   ├── schemas.py            # Pydantic data schemas
-│   └── requirements.txt      # Python dependencies
-├── docs/
-│   └── database.md           # Entity relationship database details
-├── public/                   # Shared image & vector assets
+│   │   ├── otpService.js         # Crypto OTP generator & email delivery
+│   │   └── scanningService.js    # PDF text extraction & Tesseract OCR
+│   ├── uploads/                  # Secure filesystem storage for uploaded files
+│   ├── .env.example              # Documented environment variables
+│   ├── package.json              # Backend dependencies
+│   └── server.js                 # Express server entrypoint (Port 5000)
 ├── src/
 │   ├── app/
-│   │   ├── api/
-│   │   │   └── mock/
-│   │   │       └── route.ts  # Next.js API mock route responder
-│   │   ├── auth/
-│   │   │   └── page.tsx      # Unified portal login page
-│   │   ├── citizen/dashboard/page.tsx   # Litigant wizard & tracking workspace
-│   │   ├── advocate/dashboard/page.tsx  # Lawyer matching request inbox
-│   │   ├── police/dashboard/page.tsx    # Investigating officer BNS analyzer
-│   │   ├── registrar/dashboard/page.tsx # Scrutiny checklist & archive logger
-│   │   ├── judge/dashboard/page.tsx     # Bench order entry & precedents lookups
-│   │   ├── admin/dashboard/page.tsx     # Workload telemetry & logs table
-│   │   ├── globals.css       # Tailwind colors & glassmorphic utilities
-│   │   └── layout.tsx        # SEO configurations & Outfit fonts loader
-│   └── components/
-│       ├── neural-network.tsx  # Interactive particle background
-│       ├── scales-of-justice.tsx # Floating balanced vector scales
-│       ├── courthouse.tsx      # Animated SVG structural courthouse
-│       └── india-map.tsx       # Live caseload radar map of India
-├── package.json              # npm package details
-└── tsconfig.json             # TypeScript rules
+│   │   ├── auth/page.tsx         # Role sign-in with real OTP verification
+│   │   ├── citizen/dashboard/    # Litigant filing, real upload & OCR review
+│   │   ├── advocate/dashboard/   # Counsel brief management & vakalatnama
+│   │   ├── police/dashboard/     # FIR entry, BNS mapper & evidence upload
+│   │   ├── registrar/dashboard/  # Scrutiny checklist & CNR allocator
+│   │   ├── judge/dashboard/      # Cause list & bench order signing
+│   │   ├── admin/dashboard/      # Health metrics & immutable audit trail
+│   │   ├── globals.css           # Clean B&W theme variables & utilities
+│   │   └── layout.tsx            # Inter typography & minimal layout
+│   ├── components/
+│   │   └── document-upload.tsx   # Drag-and-drop, camera scan & progress UI
+│   └── utils/
+│       └── api.ts                # Centralized client for real backend APIs
+├── next.config.ts                # API rewrites proxying /api/* to port 5000
+└── package.json                  # Frontend dependencies
 ```
 
 ---
 
 ## 🚀 Quick Start Guide
 
-NyayaFlow includes an **Interactive Sandbox Mode** in the frontend, enabling you to test every dashboard workflow instantly without starting Python servers or Postgres instances.
+### 1. Start the Backend Server (Express + Node.js)
 
-### 1. Run the Frontend (Next.js)
+```bash
+cd backend
+npm install
+node server.js
+```
+The backend server runs on `http://127.0.0.1:5000`.
+
+### 2. Start the Frontend (Next.js)
 
 At the workspace root directory:
 ```bash
-# 1. Install packages
-npm install --legacy-peer-deps
-
-# 2. Start Next.js development server
+npm install
 npm run dev
 ```
 Open **`http://localhost:3000`** in your browser.
 
-### 🔑 Sandbox Mock Login Credentials
+---
 
-Click **Sign In Portal** from the landing page. Select a role and click the **Quick Autofill Test** button to sign in instantly, or use these credentials:
+## 🔑 OTP Authentication & Testing
 
-| Role | Username / Identity ID | Access PIN / OTP Code |
-| :--- | :--- | :--- |
-| **Citizen Litigant** | `5544-6677-8899` *(Aadhaar)* | `482091` *(OTP)* |
-| **Advocate Lawyer** | `BCI/DEL/4921-2015` *(Bar ID)* | `772291` *(Private Key)* |
-| **Police Officer** | `IPS-89210-DL` *(Badge)* | `110001` *(Station PIN)* |
-| **Court Registrar** | `REG-44912-DL` *(Clerk ID)* | `889921` *(Bench PIN)* |
-| **Judicial Judge** | `JUD-DL-0049` *(COP ID)* | `004922` *(Secure PIN)* |
-| **System Admin** | `ADMIN-SYS-99` *(Admin ID)* | `990022` *(Audit PIN)* |
+1. Navigate to [http://localhost:3000/auth](http://localhost:3000/auth).
+2. Select your stakeholder role (Citizen, Advocate, Police Officer, Registrar, Judge, or Admin).
+3. Click **Send OTP**.
+4. In development mode without an SMTP provider configured, the secure 6-digit OTP is generated and printed directly to the backend terminal console. Enter the 6-digit code and click **Verify OTP & Enter Portal**.
+5. Once configured with SMTP credentials in `backend/.env`, the OTP is delivered via email.
 
 ---
 
-### 2. Run the Backend (FastAPI + Python)
+## 📄 Real Document Upload & OCR Scanning
 
-To connect the live AI advisory engine:
-
-1. Create a `backend/.env` file:
-   ```env
-   GEMINI_API_KEY="your-google-gemini-api-key-here"
-   ```
-2. Set up dependencies and start:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   python main.py
-   ```
-The backend service will run on `http://localhost:8000`. You can review the Swagger documentation at `http://localhost:8000/docs`.
+1. Open the Citizen Dashboard at [http://localhost:3000/citizen/dashboard](http://localhost:3000/citizen/dashboard).
+2. Go to **Step 3 (Upload & Scrutiny)** or switch to the **Document Repository** tab.
+3. Drag & drop or browse a PDF, JPG, or PNG document (or click **Camera Scan** on supported devices).
+4. Click **Upload Document**. The file is validated and stored on the backend disk in `backend/uploads/` with a record saved in the database.
+5. Click **Scan & Extract Text**. Direct PDF parsing or Tesseract OCR extracts the text, identifies the legal document type (e.g., Aadhaar Card, 7/12 Land Extract, Court Order), counts words, and displays editable results.
 
 ---
 **Objectives**
 
+<<<<<<< Updated upstream
 NyayaFlow aims to:
 
 ✅ Reduce filing errors
@@ -514,9 +567,21 @@ AI Legal Guidance
 
 ---
 ## ⚖️ Strict Sovereign AI Safe-Use Guardrails
+=======
+## 🔒 Environment Variables (`backend/.env.example`)
+>>>>>>> Stashed changes
 
-To prevent hallucination or loss of human sovereignty:
-1. **No Auto-CNR Generation**: Registry CNR numbers must be issued by the official government court system and registered manually by a Registrar.
-2. **Advisory Document Scrutiny**: AI checks document health scores and lists missing fields, but *cannot* reject or modify petitions.
-3. **Draft Offense Suggestion**: BNS section suggestions are presented to Police Officers as mapping recommendations; officers must manually verify and confirm selections.
-4. **Summary Reference Briefs**: Judges are presented with previous hearing chronologies and historical precedent citation matches; the final order decree is drafted exclusively by the human judge.
+Copy `backend/.env.example` to `backend/.env`:
+```env
+PORT=5000
+MONGODB_URI=mongodb://127.0.0.1:27017/nyayaflow
+JWT_SECRET=your_jwt_secret_key_here
+
+# Email OTP Delivery (Optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+EMAIL_FROM="NyayaFlow Judiciary" <no-reply@nyayaflow.gov.in>
+```
+*(If `MONGODB_URI` is not reachable, the backend automatically operates in Resilient Local Persistence Mode with zero downtime).*
