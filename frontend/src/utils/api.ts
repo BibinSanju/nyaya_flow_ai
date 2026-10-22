@@ -3,37 +3,54 @@
  * Fully integrated with Node.js/Express Backend & Real Database / File Store
  */
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined" ? "" : "http://127.0.0.1:5000");
+const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+
+// Ensure in production we never attempt to fetch localhost from a public domain (avoids Mixed Content / connection refuse)
+const isBrowser = typeof window !== "undefined";
+const isProductionDomain = isBrowser && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+
+const API_BASE_URL = rawApiUrl && !(isProductionDomain && rawApiUrl.includes("localhost"))
+  ? rawApiUrl
+  : isBrowser
+  ? ""
+  : "http://127.0.0.1:5000";
 
 // Helper for standard JSON fetch requests
 async function jsonFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const url = endpoint.startsWith("http")
     ? endpoint
     : API_BASE_URL
-    ? `${API_BASE_URL}${endpoint}`
-    : endpoint;
+    ? `${API_BASE_URL}${cleanEndpoint}`
+    : cleanEndpoint;
   
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (typeof window !== "undefined") {
+  if (isBrowser) {
     const token = localStorage.getItem("nyayaflow_token");
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (netErr: any) {
+    console.error(`[NyayaFlow API Client] Network error fetching ${url}:`, netErr);
+    throw new Error(
+      `Unable to connect to backend service. Please check your Render backend URL (NEXT_PUBLIC_API_URL) in Vercel settings and ensure Render is not sleeping.`
+    );
+  }
 
-  if (res.status === 401 && typeof window !== "undefined") {
+  if (res.status === 401 && isBrowser) {
     localStorage.removeItem("nyayaflow_token");
     localStorage.removeItem("nyayaflow_user");
     if (!window.location.pathname.startsWith("/auth")) {
@@ -115,7 +132,7 @@ export async function apiUploadDocument(
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const url = `${API_BASE_URL}/api/documents/upload`;
+    const url = API_BASE_URL ? `${API_BASE_URL}/api/documents/upload` : "/api/documents/upload";
 
     xhr.open("POST", url);
 
