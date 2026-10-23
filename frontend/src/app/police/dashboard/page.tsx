@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Shield,
@@ -12,9 +12,14 @@ import {
   Scale,
   RefreshCw,
   Plus,
-  Upload
+  Upload,
+  Mic,
+  Square,
+  Loader2,
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
-import { apiSuggestBns } from "@/utils/api";
+import { apiSuggestBns, apiTranscribeAudio } from "@/utils/api";
 import DocumentUpload from "@/components/document-upload";
 
 interface FirRecord {
@@ -37,6 +42,161 @@ export default function PolicePortal() {
   const [selectedBns, setSelectedBns] = useState<string[]>([]);
   const [officerConfirmed, setOfficerConfirmed] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ fullName?: string; email?: string } | null>(null);
+
+  // Voice Recording & Speech-to-Text State
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [sttFeedback, setSttFeedback] = useState<string | null>(null);
+  const [sttError, setSttError] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const formatSeconds = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  const stopRecordingSession = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.warn("Error stopping media recorder:", e);
+      }
+    }
+    setIsRecording(false);
+  };
+
+  const handleVoiceInput = async () => {
+    setSttError(null);
+    setSttFeedback(null);
+
+    if (isRecording) {
+      stopRecordingSession();
+      return;
+    }
+
+    try {
+      if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+        throw new Error("Microphone input is not supported in this browser.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+        },
+      });
+      streamRef.current = stream;
+
+      let mimeType = "audio/webm";
+      if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4";
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+
+        const actualType = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
+        audioChunksRef.current = [];
+
+        if (audioBlob.size < 500) {
+          setSttFeedback("Recording too brief. Please speak clearly into your microphone.");
+          setIsTranscribing(false);
+          return;
+        }
+
+        setIsTranscribing(true);
+        setSttFeedback("Transcribing oral statement with Groq Whisper AI...");
+
+        try {
+          const res = await apiTranscribeAudio(audioBlob, "auto");
+          if (res?.text && res.text.trim()) {
+            const transcribed = res.text.trim();
+            setIncidentText((prev) => (prev.trim() ? `${prev.trim()}\n\n${transcribed}` : transcribed));
+            setSttFeedback(`✓ Transcribed ${res.duration ? `${Math.round(res.duration)}s ` : ""}statement (${res.language || 'detected'})`);
+            setTimeout(() => setSttFeedback(null), 6000);
+          } else {
+            setSttFeedback("No audible speech detected. Please check microphone volume and try again.");
+          }
+        } catch (transcribeErr: any) {
+          console.error("Groq STT transcription error:", transcribeErr);
+          setSttError(
+            transcribeErr?.message || "Could not transcribe audio statement."
+          );
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 60) {
+            stopRecordingSession();
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.warn("Mic access error:", err);
+      setIsRecording(false);
+      setIsTranscribing(false);
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        setSttError("Microphone permission was denied. Please allow microphone access in your browser address bar.");
+      } else {
+        setSttError(err?.message || "Failed to initialize microphone.");
+      }
+    }
+  };
 
   useEffect(() => {
     try {
@@ -305,7 +465,85 @@ export default function PolicePortal() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-medium text-stone-300">Incident Narrative</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-stone-300">Incident Narrative</label>
+                <button
+                  type="button"
+                  onClick={handleVoiceInput}
+                  disabled={isTranscribing}
+                  className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded transition-colors ${
+                    isRecording
+                      ? "bg-rose-950/60 text-rose-200 border border-rose-500/60 shadow-[0_0_12px_rgba(244,63,94,0.2)] hover:bg-rose-900/70 cursor-pointer"
+                      : isTranscribing
+                      ? "bg-stone-900 text-stone-400 border border-[#3e352f] cursor-wait"
+                      : "bg-[#1c1815] text-stone-300 hover:text-stone-100 hover:bg-[#25201c] border border-[#3e352f] cursor-pointer"
+                  }`}
+                  title={
+                    isRecording
+                      ? "Click to stop recording and transcribe"
+                      : "Click to dictate statement via Groq Whisper AI"
+                  }
+                >
+                  {isTranscribing ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                      <span>Transcribing statement...</span>
+                    </>
+                  ) : isRecording ? (
+                    <>
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                      </span>
+                      <Square className="w-3 h-3 text-rose-300 fill-rose-300 ml-0.5" />
+                      <span className="font-mono text-rose-200 font-semibold">
+                        Stop ({formatSeconds(recordingSeconds)})
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Dictate Statement (Hindi / Marathi / English)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Active Recording Notice */}
+              {isRecording && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-950/30 border border-rose-500/40 rounded text-xs text-rose-300">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                  </span>
+                  <span>Listening... Dictate complainant or officer oral statement. Click <strong>Stop ({formatSeconds(recordingSeconds)})</strong> when done.</span>
+                  <span className="ml-auto font-mono text-[11px] text-rose-400">Max 60s</span>
+                </div>
+              )}
+
+              {/* Feedback Toast */}
+              {sttFeedback && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-900 border border-emerald-500/30 rounded text-xs text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="flex-1">{sttFeedback}</span>
+                </div>
+              )}
+
+              {/* Error Banner */}
+              {sttError && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-950/40 border border-rose-500/40 rounded text-xs text-rose-300">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="flex-1">{sttError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSttError(null)}
+                    className="text-stone-400 hover:text-stone-200 text-xs px-1"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
               <textarea
                 rows={5}
                 value={incidentText}

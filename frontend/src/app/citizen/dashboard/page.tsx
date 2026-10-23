@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -19,12 +19,17 @@ import {
   RefreshCw,
   Eye,
   CheckCircle2,
-  Trash2
+  Trash2,
+  Mic,
+  Square,
+  Loader2
 } from "lucide-react";
 import {
   apiClassifyCase,
   apiListPetitions,
-  apiGetDocuments
+  apiGetDocuments,
+  apiTranscribeAudio,
+  apiCreatePetition
 } from "@/utils/api";
 import DocumentUpload, { UploadedDocRecord } from "@/components/document-upload";
 
@@ -73,6 +78,10 @@ export default function CitizenDashboard() {
   });
   const [problemDescription, setProblemDescription] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [sttFeedback, setSttFeedback] = useState<string | null>(null);
+  const [sttError, setSttError] = useState<string | null>(null);
 
   // AI Classification State
   const [classificationResult, setClassificationResult] = useState<any>(null);
@@ -125,14 +134,167 @@ export default function CitizenDashboard() {
     }
   };
 
-  const handleVoiceInput = () => {
-    setIsRecording(true);
-    setTimeout(() => {
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const formatSeconds = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  const stopRecordingSession = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.warn("Error stopping media recorder:", e);
+      }
+    }
+    setIsRecording(false);
+  };
+
+  const handleVoiceInput = async () => {
+    setSttError(null);
+    setSttFeedback(null);
+
+    // If currently recording, user clicks to stop and transcribe
+    if (isRecording) {
+      stopRecordingSession();
+      return;
+    }
+
+    try {
+      if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+        throw new Error("Microphone input is not supported in this browser.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+        },
+      });
+      streamRef.current = stream;
+
+      let mimeType = "audio/webm";
+      if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4";
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Stop microphone stream tracks so browser mic indicator turns off
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+
+        const actualType = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
+        audioChunksRef.current = [];
+
+        if (audioBlob.size < 500) {
+          setSttFeedback("Recording too brief. Please speak clearly into your microphone.");
+          setIsTranscribing(false);
+          return;
+        }
+
+        setIsTranscribing(true);
+        setSttFeedback("Transcribing speech with Groq Whisper AI...");
+
+        try {
+          const langMap: Record<string, string> = {
+            Marathi: "mr",
+            Hindi: "hi",
+            English: "en",
+            Tamil: "ta",
+          };
+          const targetLang = langMap[personalInfo.language] || "auto";
+
+          const res = await apiTranscribeAudio(audioBlob, targetLang);
+          if (res?.text && res.text.trim()) {
+            const transcribed = res.text.trim();
+            setProblemDescription((prev) => (prev.trim() ? `${prev.trim()}\n\n${transcribed}` : transcribed));
+            setSttFeedback(
+              `✓ Transcribed ${res.duration ? `${Math.round(res.duration)}s ` : ""}speech (${res.language || personalInfo.language})`
+            );
+            setTimeout(() => setSttFeedback(null), 6000);
+          } else {
+            setSttFeedback("No audible speech detected. Please check microphone volume and try again.");
+          }
+        } catch (transcribeErr: any) {
+          console.error("Groq STT transcription error:", transcribeErr);
+          setSttError(
+            transcribeErr?.message ||
+              "Could not transcribe audio. Check connection or type dispute details manually."
+          );
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      // Start recording with 250ms chunks
+      mediaRecorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      // Start 1s interval with 60s auto-stop
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 60) {
+            stopRecordingSession();
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.warn("Mic access error:", err);
       setIsRecording(false);
-      setProblemDescription(
-        "Neighbor constructed a masonry boundary wall encroaching into my agricultural plot #142 in Kothrud, Pune. Revenue survey drawings confirm demarcation. Urgent permanent injunction requested."
-      );
-    }, 1200);
+      setIsTranscribing(false);
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        setSttError("Microphone permission was denied. Please allow microphone access in your browser address bar.");
+      } else {
+        setSttError(err?.message || "Failed to initialize microphone.");
+      }
+    }
   };
 
   const handleClassify = async () => {
@@ -155,27 +317,45 @@ export default function CitizenDashboard() {
   };
 
   const handleSubmitPetition = async () => {
+    const advocateName =
+      representationType === "legal-aid"
+        ? empaneledCounsel.find((c) => c.id === selectedCounsel)?.name || "Legal Aid Counsel"
+        : representationType === "private"
+        ? privateAdvocate.name || "Private Counsel"
+        : "In-Person (Self)";
+
     const newPetition = {
-      id: "CNR-DL-2026-" + Math.floor(10000 + Math.random() * 90000),
       citizen_name: personalInfo.name,
       contact: personalInfo.phone,
-      category: classificationResult?.category || "Property Dispute",
+      category: classificationResult?.category || "Property & Land Dispute (Civil)",
       description: problemDescription,
       status: "Scrutiny Pending",
       suggested_court: classificationResult?.suggested_court || "Sub-Divisional Magistrate Court, Pune",
-      advocate_name:
-        representationType === "legal-aid"
-          ? empaneledCounsel.find((c) => c.id === selectedCounsel)?.name || "Legal Aid Counsel"
-          : representationType === "private"
-          ? privateAdvocate.name || "Private Counsel"
-          : "In-Person (Self)",
-      cnr_number: "DLCT01-" + Math.floor(100000 + Math.random() * 900000) + "-2026",
-      documents_count: uploadedDocs.length,
-      created_at: new Date().toISOString(),
+      advocate_name: advocateName,
+      language: personalInfo.language || "English",
+      health_score: 92,
     };
 
-    setSubmittedPetition(newPetition);
-    setPetitions((prev) => [newPetition, ...prev]);
+    try {
+      const res = await apiCreatePetition(newPetition);
+      if (res?.petition) {
+        setSubmittedPetition(res.petition);
+        setPetitions((prev) => [res.petition, ...prev]);
+        setWizardStep(4);
+        return;
+      }
+    } catch (err) {
+      console.warn("Supabase petition submission failed, using local copy:", err);
+    }
+
+    const fallbackPet = {
+      ...newPetition,
+      id: "CNR-DL-2026-" + Math.floor(10000 + Math.random() * 90000),
+      cnr_number: "DLCT01-" + Math.floor(100000 + Math.random() * 900000) + "-2026",
+      created_at: new Date().toISOString(),
+    };
+    setSubmittedPetition(fallbackPet);
+    setPetitions((prev) => [fallbackPet, ...prev]);
     setWizardStep(4);
   };
 
@@ -326,13 +506,79 @@ export default function CitizenDashboard() {
                       <button
                         type="button"
                         onClick={handleVoiceInput}
-                        disabled={isRecording}
-                        className="inline-flex items-center gap-1.5 text-xs text-stone-300 hover:text-stone-100 px-2.5 py-1 rounded border border-[#3e352f] bg-[#1c1815] transition-colors"
+                        disabled={isTranscribing}
+                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded transition-colors ${
+                          isRecording
+                            ? "bg-rose-950/60 text-rose-200 border border-rose-500/60 shadow-[0_0_12px_rgba(244,63,94,0.2)] hover:bg-rose-900/70 cursor-pointer"
+                            : isTranscribing
+                            ? "bg-stone-900 text-stone-400 border border-[#3e352f] cursor-wait"
+                            : "bg-[#1c1815] text-stone-300 hover:text-stone-100 hover:bg-[#25201c] border border-[#3e352f] cursor-pointer"
+                        }`}
+                        title={
+                          isRecording
+                            ? "Click to stop recording and transcribe"
+                            : `Click to speak grievance in ${personalInfo.language}`
+                        }
                       >
-                        <Volume2 className={`w-3.5 h-3.5 ${isRecording ? "text-stone-100 animate-pulse" : ""}`} />
-                        {isRecording ? "Recording Audio..." : "Voice Input (Marathi / Hindi)"}
+                        {isTranscribing ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                            <span>Transcribing with Groq AI...</span>
+                          </>
+                        ) : isRecording ? (
+                          <>
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                            </span>
+                            <Square className="w-3 h-3 text-rose-300 fill-rose-300 ml-0.5" />
+                            <span className="font-mono text-rose-200 font-semibold">
+                              Stop ({formatSeconds(recordingSeconds)})
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Voice Input ({personalInfo.language})</span>
+                          </>
+                        )}
                       </button>
                     </div>
+
+                    {/* Active Recording Notice */}
+                    {isRecording && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-950/30 border border-rose-500/40 rounded text-xs text-rose-300">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                        </span>
+                        <span>Listening... Speak your grievance in {personalInfo.language}. Click <strong>Stop ({formatSeconds(recordingSeconds)})</strong> when done.</span>
+                        <span className="ml-auto font-mono text-[11px] text-rose-400">Max 60s</span>
+                      </div>
+                    )}
+
+                    {/* Feedback Toast */}
+                    {sttFeedback && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-900 border border-emerald-500/30 rounded text-xs text-emerald-400">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1">{sttFeedback}</span>
+                      </div>
+                    )}
+
+                    {/* Error Banner */}
+                    {sttError && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-950/40 border border-rose-500/40 rounded text-xs text-rose-300">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1">{sttError}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSttError(null)}
+                          className="text-stone-400 hover:text-stone-200 text-xs px-1"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
 
                     <textarea
                       rows={5}

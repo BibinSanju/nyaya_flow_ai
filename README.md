@@ -3,13 +3,12 @@
 > **Indian Judicial Workflow & Document Scrutiny Platform**  
 > *Under Human Authority. Structured legal case management for litigants, advocates, police, registrars, and judges.*
 
-NyayaFlow is an intelligent, full-stack judicial workflow management platform designed for the Indian legal ecosystem. It connects citizens, advocates, police officers, registrars, and judges with structured e-filing, real document verification, OCR text extraction, OTP authentication, and an Express/Node.js backend with MongoDB integration.
+NyayaFlow is an intelligent, full-stack judicial workflow management platform designed for the Indian legal ecosystem. It connects citizens, advocates, police officers, registrars, and judges with structured e-filing, real document verification, OCR text extraction, OTP authentication, and an Express/Node.js backend with Supabase (PostgreSQL) cloud integration.
 
 Rather than replacing legal professionals, NyayaFlow acts as an intelligent assistant that reduces paperwork, minimizes procedural errors, and accelerates administrative workflows while ensuring that all legal decisions remain under human authority.
 ---
 **Vision Statement**
 
-<<<<<<< Updated upstream
 "NyayaFlow envisions an India where every citizen can access justice without being overwhelmed by legal complexity, unnecessary paperwork, or procedural delays. By combining Artificial Intelligence with human judicial authority, we aim to build a transparent, efficient, and citizen-centric legal ecosystem."
 ---
 **Problems We Solve**
@@ -168,15 +167,10 @@ Judge
 often use disconnected systems.
 
 NyayaFlow connects all stakeholders through one unified platform.
----
-## 🏛️ Project Architecture & Stakeholder Roles
-=======
-## 🏛️ Stakeholder Portals
->>>>>>> Stashed changes
+## 🏛️ Project Architecture & Stakeholder Portals
 
 NyayaFlow connects six primary judicial stakeholders:
 
-<<<<<<< Updated upstream
 ```mermaid
 graph TD
     A[Citizen] -->|Filing / Voice Input| B[AI Scrutiny & Advocate Match]
@@ -240,15 +234,8 @@ S --> T{Party Satisfied?}
 T -->|Yes| U[Close Case File]
 ```
 
-1. **Citizen / Litigant**: Translates verbal/written grievances in regional languages, classifies case types, audits file health, downloads subordinate court filing templates, and connects with matched advocates.
-2. **Advocate**: Reviews matching litigant requests, accepts representation, and manages pending case dossiers.
-3. **Police Officer**: Inputs FIR narratives, registers digital hashes of forensic files, and confirms BNS (Bharatiya Nyaya Sanhita) penal mapping suggestions.
-4. **Registrar**: Reviews case checklists, links physical archival locations (building, room, shelf, box) to digitized profiles, and assigns official court CNR numbers.
-5. **Presiding Judge**: Inspects daily cause lists, accesses AI-generated brief summaries, maps precedents, and signs bench orders.
-6. **Administrator**: Audits immutable log tables, tracks district caseload density maps, and monitors server cluster telemetry.
-=======
 1. **Citizen / Litigant** (`/citizen/dashboard`):
-   - Regional language grievance filing narrative & voice input.
+   - Regional language grievance filing narrative & real microphone voice dictation (Groq Whisper Large v3).
    - Statutory acts and document requirement checklists.
    - Real drag-and-drop document upload (PDF, JPG, PNG) and camera scanning.
    - Live tracking of registered case dossiers by CNR number.
@@ -257,9 +244,9 @@ T -->|Yes| U[Close Case File]
    - Inspect client annexures prior to registry scrutiny.
    - Confirm and sign Vakalatnama representation (Rule 4 BCI).
 3. **Police Officer** (`/police/dashboard`):
-   - Input First Information Report (FIR) narratives.
+   - Input First Information Report (FIR) narratives with BNS legal section suggestions.
    - Bharatiya Nyaya Sanhita (BNS) section recommendations with officer verification.
-   - Attach digital evidence and scanned chargesheets.
+   - Attach digital evidence with SHA-256 integrity checksums under Section 63 BSA.
 4. **Court Registrar** (`/registrar/dashboard`):
    - Order 4 CPC procedural defect scrutiny verification.
    - Assign official 16-character Case Number Record (CNR) numbers.
@@ -271,29 +258,28 @@ T -->|Yes| U[Close Case File]
 6. **System Administrator** (`/admin/dashboard`):
    - Monitor backend API health, OCR engine status, and database connections.
    - Immutable security and transactional audit trail logging.
->>>>>>> Stashed changes
 
 ---
 
-## 🎨 Clean Black-and-White Theme
+## 🎨 Judicial Dark Stone Theme
 
-- **Primary background:** Pure White (`#FFFFFF`)
-- **Primary text:** Pitch Black (`#000000`)
-- **Secondary background:** Light Gray (`#F5F5F5`)
-- **Borders:** Soft Gray (`#E5E5E5`)
-- **Buttons:** Black background with white text, dark gray hover
-- **Error Callouts:** Red (`#DC2626`)
-- **Success Callouts:** Green (`#16A34A`)
-- **Typography:** Inter sans-serif for optimal legibility across mobile, tablet, and desktop.
+- **Primary background:** Deep Warm Charcoal (`#12100e`)
+- **Primary text:** Clean Off-White (`#F8FAFC`)
+- **Accent:** Warm Judicial Gold (`#C49752`)
+- **Secondary background:** Warm Muted Stone (`#1C1917`)
+- **Borders:** Subdued Border (`#292524`)
+- **Buttons:** High-contrast solid stone with gold/amber hover
+- **Typography:** Inter / System UI sans-serif for optimal legibility across mobile, tablet, and desktop.
 - Unnecessary decorative animations, gradients, and promotional AI fluff have been completely removed.
 
 ---
 
 ## ⚙️ Tech Stack
 
-* **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Lucide Icons.
+* **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Lucide Icons, Framer Motion.
 * **Backend:** Node.js, Express.js.
-* **Database:** MongoDB with Mongoose (with automated resilient local storage fallback).
+* **Database:** Supabase Cloud (PostgreSQL) — single source of truth across all machines and deployments.
+* **AI & LLM:** Groq Cloud API (Llama 3.3 / Groq models & Whisper Large v3 for Voice Dictation STT).
 * **File Upload:** Multer with strict MIME validation (PDF, JPG, JPEG, PNG), 15 MB size limit, and sanitized server-side filenames.
 * **OCR & Scanning:** `pdf-parse` (digital PDF direct text extraction) & `tesseract.js` (optical character recognition for scanned images).
 * **Authentication:** Cryptographic OTP (HMAC-SHA256, 10-minute expiry, 60s cooldown timer, rate limiting, and Nodemailer SMTP delivery integration).
@@ -414,7 +400,6 @@ Open **`http://localhost:3000`** in your browser.
 ---
 **Objectives**
 
-<<<<<<< Updated upstream
 NyayaFlow aims to:
 
 ✅ Reduce filing errors
@@ -585,16 +570,29 @@ Multilingual Support
 AI Legal Guidance
 
 ---
+
 ## ⚖️ Strict Sovereign AI Safe-Use Guardrails
-=======
-## 🔒 Environment Variables (`backend/.env.example`)
->>>>>>> Stashed changes
+
+1. **Human Authority**: AI provides advisory summaries and checklists, but never issues final binding orders or assigns CNR numbers autonomously.
+2. **Cryptographic Integrity**: Evidence files generate SHA-256 hashes upon upload under Section 63 BSA.
+3. **Auditability**: Every major state transaction records an immutable log with actor, role, IP, and timestamp.
+
+---
+
+## 🔒 Environment Variables (`backend/.env`)
 
 Copy `backend/.env.example` to `backend/.env`:
 ```env
 PORT=5000
-MONGODB_URI=mongodb://127.0.0.1:27017/nyayaflow
 JWT_SECRET=your_jwt_secret_key_here
+
+# Supabase PostgreSQL Cloud Database
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+
+# Groq Cloud AI (LLM Chat & Whisper STT Dictation)
+GROQ_API_KEY=gsk_your_groq_api_key_here
 
 # Email OTP Delivery (Optional)
 SMTP_HOST=smtp.gmail.com
@@ -603,4 +601,5 @@ SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_app_password
 EMAIL_FROM="NyayaFlow Judiciary" <no-reply@nyayaflow.gov.in>
 ```
-*(If `MONGODB_URI` is not reachable, the backend automatically operates in Resilient Local Persistence Mode with zero downtime).*
+*(If Supabase credentials are not provided, the backend seamlessly operates in in-memory mode so you can test features immediately without any local database requirements).*
+

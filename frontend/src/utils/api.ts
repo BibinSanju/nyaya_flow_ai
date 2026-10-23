@@ -249,3 +249,81 @@ export async function apiSummarizeCase(petitionText: string, hearingsSummary?: s
     body: JSON.stringify({ petition_text: petitionText, hearings_summary: hearingsSummary }),
   });
 }
+
+// -------------------------------------------------------------
+// Groq Whisper Speech-to-Text (STT) Audio Transcription API
+// -------------------------------------------------------------
+
+export async function apiTranscribeAudio(
+  audioBlob: Blob,
+  language = "auto"
+): Promise<{ success: boolean; text: string; model?: string; duration?: number; language?: string }> {
+  let filename = "dictation.webm";
+  if (audioBlob.type.includes("mp4") || audioBlob.type.includes("m4a")) filename = "dictation.m4a";
+  else if (audioBlob.type.includes("wav")) filename = "dictation.wav";
+  else if (audioBlob.type.includes("ogg")) filename = "dictation.ogg";
+
+  const formData = new FormData();
+  formData.append("audio", audioBlob, filename);
+  if (language && language !== "auto") {
+    formData.append("language", language);
+  }
+
+  const cleanEndpoint = "/api/stt/transcribe";
+  const url = cleanEndpoint.startsWith("http")
+    ? cleanEndpoint
+    : API_BASE_URL
+    ? `${API_BASE_URL}${cleanEndpoint}`
+    : cleanEndpoint;
+
+  const headers: Record<string, string> = {};
+  if (isBrowser) {
+    const token = localStorage.getItem("nyayaflow_token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Speech-to-text audio transcription failed.");
+  }
+  return data;
+}
+
+// -------------------------------------------------------------
+// Petition Mutations (Registrar & Judge)
+// -------------------------------------------------------------
+
+export async function apiCreatePetition(petitionData: any) {
+  return await jsonFetch("/api/petitions", {
+    method: "POST",
+    body: JSON.stringify(petitionData),
+  });
+}
+
+export async function apiUpdatePetition(id: string, updates: any) {
+  return await jsonFetch(`/api/petitions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function apiArchivePetition(id: string, archiveData: any) {
+  return await jsonFetch(`/api/petitions/${id}/archive`, {
+    method: "POST",
+    body: JSON.stringify(archiveData),
+  });
+}
+
+export async function apiRecordCourtOrder(id: string, orderData: any) {
+  return await jsonFetch(`/api/petitions/${id}/order`, {
+    method: "POST",
+    body: JSON.stringify(orderData),
+  });
+}
+

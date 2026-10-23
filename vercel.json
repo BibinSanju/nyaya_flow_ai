@@ -1,28 +1,5 @@
 {
-  "services": {
-    "frontend": {
-      "root": "frontend",
-      "framework": "nextjs"
-    },
-    "backend": {
-      "root": "backend",
-      "entrypoint": "main:app"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/backend(/.*)?",
-      "destination": {
-        "type": "service",
-        "service": "backend"
-      }
-    },
-    {
-      "source": "/(.*)",
-      "destination": {
-        "type": "service",
-        "service": "frontend"
-      }
-    }
-  ]
+  "buildCommand": "npm run build:frontend",
+  "outputDirectory": "frontend/.next",
+  "framework": "nextjs"
 }

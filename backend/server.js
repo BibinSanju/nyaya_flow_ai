@@ -2,19 +2,17 @@ const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 const express = require("express");
 const cors = require("cors");
-const { connectDB, getMongoStatus } = require("./config/database");
+const { getSupabaseStatus, isSupabaseConfigured } = require("./config/supabase");
 const authRoutes = require("./routes/authRoutes");
 const documentRoutes = require("./routes/documentRoutes");
 const courtRoutes = require("./routes/courtRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const sttRoutes = require("./routes/sttRoutes");
 const { errorHandler } = require("./middleware/errorMiddleware");
 const EmailService = require("./services/emailService");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// Connect Database (MongoDB or local persistent storage)
-connectDB();
 
 // CORS setup supporting local development, configured origins, and production domains
 const allowedOrigins = process.env.CORS_ORIGIN
@@ -55,7 +53,7 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // Lightweight IP-based rate limiter for authentication endpoints
 const ipRateLimitMap = new Map();
-const authRateLimiter = (maxRequests = 10, windowMs = 60 * 1000) => {
+const authRateLimiter = (maxRequests = 20, windowMs = 60 * 1000) => {
   return (req, res, next) => {
     const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
     const now = Date.now();
@@ -84,23 +82,25 @@ const authRateLimiter = (maxRequests = 10, windowMs = 60 * 1000) => {
 
 // System Health Probe
 app.get("/health", (req, res) => {
-  const dbStatus = getMongoStatus();
+  const supaStatus = getSupabaseStatus();
   res.json({
     status: "healthy",
-    service: "NyayaFlow Node.js Judicial Workflow Engine",
-    version: "2.1.0",
-    database: dbStatus.mode,
-    mongoConnected: dbStatus.connected,
-    emailService: EmailService.isSmtpConfigured() ? "SMTP (Active & Configured)" : "SMTP Not Configured (Pending Credentials)",
+    service: "NyayaFlow Judicial Workflow Engine",
+    version: "3.0.0",
+    database: supaStatus.configured ? "Supabase Cloud (PostgreSQL Active)" : "Supabase Pending (In-Memory Ready)",
+    supabaseConfigured: supaStatus.configured,
+    groqAi: process.env.GROQ_API_KEY ? "Groq LLM & Whisper Active" : "Offline Judicial Copilot Active",
+    emailService: EmailService.isSmtpConfigured() ? "SMTP (Active & Configured)" : "SMTP Terminal Output Mode",
     ocr: "Tesseract.js & PDF-Parse active",
     timestamp: new Date().toISOString(),
   });
 });
 
-// Mount Routes with IP rate limiting on auth
-app.use("/api/auth", authRateLimiter(20, 60 * 1000), authRoutes);
+// Mount Routes
+app.use("/api/auth", authRateLimiter(25, 60 * 1000), authRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/stt", sttRoutes);
 app.use("/api", courtRoutes);
 
 // 404 Handler
@@ -118,8 +118,10 @@ app.use(errorHandler);
 const server = app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`[NyayaFlow Backend] Server running on http://127.0.0.1:${PORT}`);
+  console.log(`[Database]          ${isSupabaseConfigured() ? "Connected to Supabase Cloud (PostgreSQL)" : "Operating in In-Memory / Supabase Pending Mode"}`);
   console.log(`[Auth Endpoints]     http://127.0.0.1:${PORT}/api/auth/send-otp`);
   console.log(`[Document Endpoints] http://127.0.0.1:${PORT}/api/documents/upload`);
+  console.log(`[STT Endpoint]       http://127.0.0.1:${PORT}/api/stt/transcribe`);
   console.log(`[Health Probe]       http://127.0.0.1:${PORT}/health`);
   console.log(`======================================================\n`);
 });

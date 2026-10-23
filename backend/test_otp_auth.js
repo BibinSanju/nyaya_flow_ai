@@ -194,7 +194,7 @@ async function runTests() {
     const judgeToken = generateToken({ id: "user_jdg_1", role: "judge" });
     const registrarToken = generateToken({ id: "user_reg_1", role: "registrar" });
     const adminToken = generateToken({ id: "user_adm_1", role: "admin" });
-    const advocateToken = generateToken({ id: "user_adv_1", role: "advocate" });
+    const rbacAdvocateToken = generateToken({ id: "user_adv_1", role: "advocate" });
 
     // A. Unauthenticated call to police endpoint
     const unauthPolice = await request("POST", "/api/police/bns-suggest", { incident_report: "theft" });
@@ -214,7 +214,7 @@ async function runTests() {
 
     // D. Advocate token calling judge case summary -> 403 Forbidden
     const advOnJudge = await request("POST", "/api/judge/case-summary", { petition_text: "dispute" }, {
-      Authorization: `Bearer ${advocateToken}`,
+      Authorization: `Bearer ${rbacAdvocateToken}`,
     });
     assert(advOnJudge.status === 403, "Advocate forbidden from judicial bench summary endpoint (HTTP 403)");
 

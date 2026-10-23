@@ -15,7 +15,7 @@ import {
   Scale,
   RefreshCw
 } from "lucide-react";
-import { apiListPetitions } from "@/utils/api";
+import { apiListPetitions, apiUpdatePetition } from "@/utils/api";
 
 interface PetitionCase {
   id: string;
@@ -107,21 +107,30 @@ export default function RegistrarDashboard() {
   const selectedCase =
     cases.find((c) => c.id === selectedCaseId) || cases[0] || defaultCases[0];
 
-  const handleIssueCNR = () => {
+  const handleIssueCNR = async () => {
     if (!officialCnr.trim()) return;
     setActionLoading(true);
 
-    setTimeout(() => {
-      const updated = cases.map((c) =>
-        c.id === selectedCase.id
-          ? { ...c, status: "CNR Issued", cnrNumber: officialCnr.trim() }
-          : c
-      );
-      setCases(updated);
-      setSuccessMessage(`Official CNR "${officialCnr}" assigned. Case scheduled into Cause Ledger.`);
-      setOfficialCnr("");
-      setActionLoading(false);
-    }, 600);
+    try {
+      if (selectedCase.id && !selectedCase.id.startsWith("default-")) {
+        await apiUpdatePetition(selectedCase.id, {
+          cnr_number: officialCnr.trim(),
+          status: "CNR Issued",
+        });
+      }
+    } catch (e) {
+      console.warn("Update petition failed:", e);
+    }
+
+    const updated = cases.map((c) =>
+      c.id === selectedCase.id
+        ? { ...c, status: "CNR Issued", cnrNumber: officialCnr.trim() }
+        : c
+    );
+    setCases(updated);
+    setSuccessMessage(`Official CNR "${officialCnr}" assigned. Case scheduled into Cause Ledger.`);
+    setOfficialCnr("");
+    setActionLoading(false);
   };
 
   const handleAutoFillCnr = () => {

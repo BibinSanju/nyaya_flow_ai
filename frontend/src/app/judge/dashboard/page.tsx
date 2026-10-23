@@ -19,7 +19,7 @@ import {
   UserCheck,
   Sparkles
 } from "lucide-react";
-import { apiListPetitions } from "@/utils/api";
+import { apiListPetitions, apiRecordCourtOrder } from "@/utils/api";
 
 interface CourtCase {
   cnr: string;
@@ -196,16 +196,25 @@ export default function JudgePortal() {
   const activeCase =
     causeList.find((c) => c.cnr === selectedCnr) || causeList[0] || defaultCases[0];
 
-  const handleRecordDecree = () => {
+  const handleRecordDecree = async () => {
     if (!actionNotes.trim()) return;
     setProcessingOrder(true);
 
-    setTimeout(() => {
-      setCasesLogged((prev) => [...prev, activeCase.cnr]);
-      setProcessingOrder(false);
-      setActionNotes("");
-      alert(`Judicial Order decree recorded for CNR ${activeCase.cnr}: "${actionStatus}"`);
-    }, 600);
+    try {
+      if (activeCase.id && !activeCase.id.startsWith("mock-")) {
+        await apiRecordCourtOrder(activeCase.id, {
+          action_taken: actionStatus,
+          order_text: actionNotes.trim(),
+        });
+      }
+    } catch (e) {
+      console.warn("Save court order error:", e);
+    }
+
+    setCasesLogged((prev) => [...prev, activeCase.cnr]);
+    setProcessingOrder(false);
+    setActionNotes("");
+    alert(`Judicial Order decree recorded for CNR ${activeCase.cnr}: "${actionStatus}"`);
   };
 
   const handleOpenChat = () => {

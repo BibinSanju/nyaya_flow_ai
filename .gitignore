@@ -14,7 +14,9 @@ node_modules/
 # backend runtime & local storage
 backend/uploads/
 backend/data/
-backend/db/
+backend/db/*.sqlite*
+backend/db/*.db
+!backend/db/*.sql
 backend/.env
 backend/.env.*
 

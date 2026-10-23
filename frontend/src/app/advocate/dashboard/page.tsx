@@ -14,7 +14,7 @@ import {
   Eye,
   Shield
 } from "lucide-react";
-import { apiListPetitions } from "@/utils/api";
+import { apiListPetitions, apiUpdatePetition } from "@/utils/api";
 
 interface MatchRequest {
   id: string;
@@ -95,10 +95,20 @@ export default function AdvocateDashboard() {
 
   const handleAcceptBrief = async () => {
     setActionLoading(true);
-    setTimeout(() => {
-      setAcceptedRequests((prev) => [...prev, selectedCase.id]);
-      setActionLoading(false);
-    }, 600);
+
+    try {
+      if (selectedCase.id && !selectedCase.id.startsWith("req-")) {
+        await apiUpdatePetition(selectedCase.id, {
+          advocate_name: currentUser?.fullName || "Adv. Abhishek Deshmukh",
+          status: "Registry Audited",
+        });
+      }
+    } catch (e) {
+      console.warn("Advocate brief acceptance error:", e);
+    }
+
+    setAcceptedRequests((prev) => [...prev, selectedCase.id]);
+    setActionLoading(false);
   };
 
   const handleOpenChat = () => {
