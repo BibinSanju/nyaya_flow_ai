@@ -343,3 +343,45 @@ export async function apiRecordCourtOrder(id: string, orderData: any) {
   });
 }
 
+// -------------------------------------------------------------
+// Appeal, Summons & Public eCourts Lookup APIs
+// -------------------------------------------------------------
+
+export async function apiAnalyzeAppeal(appealPayload: {
+  court?: string;
+  category?: string;
+  decree_type?: string;
+  summary?: string;
+  impugned_order_date?: string;
+  petitioner_name?: string;
+}) {
+  return await jsonFetch("/api/case/appeal-analysis", {
+    method: "POST",
+    body: JSON.stringify(appealPayload),
+  });
+}
+
+export async function apiGenerateSummons(summonsPayload: {
+  petition_id?: string;
+  cnr_number: string;
+  petitioner_name: string;
+  opposite_party_name: string;
+  opposite_party_address?: string;
+  hearing_date?: string;
+  court_name?: string;
+  cause_title?: string;
+}) {
+  return await jsonFetch("/api/case/generate-summons", {
+    method: "POST",
+    body: JSON.stringify(summonsPayload),
+  });
+}
+
+export async function apiLookupCnr(cnrNumber: string) {
+  return await jsonFetch(`/api/case/cnr/${encodeURIComponent(cnrNumber.trim())}`);
+}
+
+export async function apiSearchStatutes(query: string) {
+  return await jsonFetch(`/api/legal/statutes?q=${encodeURIComponent(query.trim())}`);
+}
+

@@ -32,6 +32,9 @@ import {
   apiCreatePetition
 } from "@/utils/api";
 import DocumentUpload, { UploadedDocRecord } from "@/components/document-upload";
+import AppealAnalysisModal from "@/components/appeal-analysis-modal";
+import CourtSummonsModal from "@/components/court-summons-modal";
+import CnrTracker from "@/components/cnr-tracker";
 
 const empaneledCounsel = [
   {
@@ -102,6 +105,8 @@ export default function CitizenDashboard() {
   const [serverDocuments, setServerDocuments] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoadingPetitions, setIsLoadingPetitions] = useState(false);
+  const [selectedCaseForAppeal, setSelectedCaseForAppeal] = useState<any>(null);
+  const [selectedCaseForSummons, setSelectedCaseForSummons] = useState<any>(null);
 
   useEffect(() => {
     try {
@@ -1009,68 +1014,92 @@ export default function CitizenDashboard() {
 
           {/* TAB 2: TRACK REGISTERED CASES */}
           {activeTab === "track-case" && (
-            <div className="border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 backdrop-blur-md space-y-6 shadow-xl shadow-black/40">
-              <div>
-                <h2 className="text-base font-bold text-stone-100">Track Registered Court Cases</h2>
-                <p className="text-xs text-stone-400 mt-0.5">
-                  Inspect the live status, hearing dates, and CNR numbers for registered petitions.
-                </p>
-              </div>
+            <div className="space-y-6">
+              {/* Live eCourts CNR Tracker */}
+              <CnrTracker />
 
-              {/* Search */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter by CNR number, category, or party name..."
-                  className="bw-input"
-                />
-              </div>
+              <div className="border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 backdrop-blur-md space-y-6 shadow-xl shadow-black/40">
+                <div>
+                  <h2 className="text-base font-bold text-stone-100">My Registered Court Petitions</h2>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Inspect your petition status, access digital summons, or analyze grounds of appeal under CPC Section 96.
+                  </p>
+                </div>
 
-              {/* Cases Table */}
-              <div className="border border-[#2d2621] rounded-lg overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#14110f] border-b border-[#2d2621] text-stone-400 font-semibold">
-                    <tr>
-                      <th className="p-3">CNR Number / ID</th>
-                      <th className="p-3">Dispute Description</th>
-                      <th className="p-3">Category</th>
-                      <th className="p-3">Assigned Counsel</th>
-                      <th className="p-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#26201c]">
-                    {petitions
-                      .filter((p) => {
-                        if (!searchQuery) return true;
-                        const q = searchQuery.toLowerCase();
-                        return (
-                          (p.cnr_number || "").toLowerCase().includes(q) ||
-                          (p.id || "").toLowerCase().includes(q) ||
-                          (p.category || "").toLowerCase().includes(q) ||
-                          (p.description || "").toLowerCase().includes(q)
-                        );
-                      })
-                      .map((p, idx) => (
-                        <tr key={idx} className="hover:bg-[#1a1614] transition-colors">
-                          <td className="p-3 font-mono font-medium text-stone-200">
-                            {p.cnr_number || p.id}
-                          </td>
-                          <td className="p-3 max-w-xs truncate text-stone-300">
-                            {p.description}
-                          </td>
-                          <td className="p-3 text-stone-400">{p.category}</td>
-                          <td className="p-3 text-stone-300">{p.advocate_name || "Legal Aid"}</td>
-                          <td className="p-3">
-                            <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium border border-[#38302a] bg-[#201b17] text-stone-300">
-                              {p.status || "Scrutiny Pending"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
+                {/* Search */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Filter petitions by CNR, category, or grievance..."
+                    className="bw-input"
+                  />
+                </div>
+
+                {/* Cases Table */}
+                <div className="border border-[#2d2621] rounded-lg overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#14110f] border-b border-[#2d2621] text-stone-400 font-semibold">
+                      <tr>
+                        <th className="p-3">CNR Number / ID</th>
+                        <th className="p-3">Dispute Description</th>
+                        <th className="p-3">Category</th>
+                        <th className="p-3">Assigned Counsel</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#26201c]">
+                      {petitions
+                        .filter((p) => {
+                          if (!searchQuery) return true;
+                          const q = searchQuery.toLowerCase();
+                          return (
+                            (p.cnr_number || "").toLowerCase().includes(q) ||
+                            (p.id || "").toLowerCase().includes(q) ||
+                            (p.category || "").toLowerCase().includes(q) ||
+                            (p.description || "").toLowerCase().includes(q)
+                          );
+                        })
+                        .map((p, idx) => (
+                          <tr key={idx} className="hover:bg-[#1a1614] transition-colors">
+                            <td className="p-3 font-mono font-medium text-stone-200">
+                              {p.cnr_number || p.id}
+                            </td>
+                            <td className="p-3 max-w-xs truncate text-stone-300">
+                              {p.description}
+                            </td>
+                            <td className="p-3 text-stone-400">{p.category}</td>
+                            <td className="p-3 text-stone-300">{p.advocate_name || "Legal Aid"}</td>
+                            <td className="p-3">
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium border border-[#38302a] bg-[#201b17] text-stone-300">
+                                {p.status || "Scrutiny Pending"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setSelectedCaseForSummons(p)}
+                                  className="px-2 py-1 rounded bg-[#241e19] hover:bg-[#322922] border border-[#403429] text-[11px] text-amber-300 font-medium transition-colors cursor-pointer"
+                                  title="View Digital Summons"
+                                >
+                                  Summons
+                                </button>
+                                <button
+                                  onClick={() => setSelectedCaseForAppeal(p)}
+                                  className="px-2 py-1 rounded bg-[#2a221c] hover:bg-[#3a3026] border border-[#524132] text-[11px] text-stone-200 font-medium transition-colors cursor-pointer"
+                                  title="Analyze Grounds of Appeal"
+                                >
+                                  Appeal
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1140,6 +1169,31 @@ export default function CitizenDashboard() {
           )}
         </main>
       </div>
+
+      {/* Appeal Analysis Modal */}
+      <AppealAnalysisModal
+        isOpen={!!selectedCaseForAppeal}
+        onClose={() => setSelectedCaseForAppeal(null)}
+        caseData={
+          selectedCaseForAppeal
+            ? {
+                id: selectedCaseForAppeal.id,
+                cnr: selectedCaseForAppeal.cnr_number,
+                petitioner: selectedCaseForAppeal.citizen_name || personalInfo.name,
+                court: selectedCaseForAppeal.suggested_court,
+                category: selectedCaseForAppeal.category,
+                description: selectedCaseForAppeal.description,
+              }
+            : undefined
+        }
+      />
+
+      {/* Court Summons Modal */}
+      <CourtSummonsModal
+        isOpen={!!selectedCaseForSummons}
+        onClose={() => setSelectedCaseForSummons(null)}
+        petition={selectedCaseForSummons}
+      />
 
       {/* Footer */}
       <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">

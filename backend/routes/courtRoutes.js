@@ -1,8 +1,10 @@
 const express = require("express");
 const router = express.Router();
+const crypto = require("crypto");
 const { supabase, isSupabaseConfigured } = require("../config/supabase");
 const { requireAuth, requireRole, optionalAuth } = require("../middleware/authMiddleware");
 const CaseValidationService = require("../services/caseValidationService");
+const LegalKnowledgeService = require("../services/legalKnowledgeService");
 
 // In-memory fallback if Supabase is not configured
 const memoryPetitions = new Map();
@@ -637,5 +639,233 @@ router.post(
     });
   }
 );
+
+// -------------------------------------------------------------
+// AI Appeal Analysis & Grounds Generator (Lifecycle Appeal Branch)
+// -------------------------------------------------------------
+router.post("/case/appeal-analysis", optionalAuth, async (req, res) => {
+  const {
+    court = "Subordinate Civil Court, Pune",
+    category = "Property & Land Dispute (Civil)",
+    decree_type = "Injunction Refused / Adverse Decree",
+    summary = "",
+    impugned_order_date = new Date().toISOString(),
+    petitioner_name = "Appellant",
+  } = req.body;
+
+  const analysis = LegalKnowledgeService.analyzeAppellateGrounds({
+    court,
+    category,
+    decreeType: decree_type,
+    summary,
+  });
+
+  const appealDraft = `IN THE COURT OF THE DISTRICT & SESSIONS JUDGE AT PUNE
+CIVIL APPELLATE JURISDICTION
+REGULAR CIVIL APPEAL NO. ________ OF 2026
+
+MEMORANDUM OF APPEAL UNDER SECTION 96 READ WITH ORDER XLI OF CPC, 1908
+
+IN THE MATTER OF:
+${petitioner_name} ... Appellant / Original Plaintiff
+VERSUS
+Respondents / Original Defendants
+
+1. The Appellant above-named prefers this Memorandum of Appeal against the Impugned Order dated ${new Date(impugned_order_date).toLocaleDateString()} passed by the ${court}.
+
+2. GROUNDS OF APPEAL:
+${analysis.suggestedGrounds.map((g, idx) => `   (${String.fromCharCode(97 + idx)}) That the Learned Judge erred in ${g.toLowerCase()}.`).join("\n")}
+
+3. PRAYER:
+   It is most respectfully prayed that this Appellate Court may be pleased to:
+   (a) Call for the records and proceedings of the lower court;
+   (b) Set aside the Impugned Order dated ${new Date(impugned_order_date).toLocaleDateString()};
+   (c) Grant temporary status quo / interim injunction pending disposal of this appeal.`;
+
+  res.json({
+    success: true,
+    appeal_id: "appeal_" + Date.now(),
+    analysis,
+    appeal_draft: appealDraft,
+    statutory_citations: [
+      "Code of Civil Procedure, 1908 Section 96",
+      "Limitation Act, 1963 Article 116",
+      "Specific Relief Act, 1963 Section 38",
+      "Bharatiya Sakshya Adhiniyam, 2023 Section 63",
+    ],
+  });
+});
+
+// -------------------------------------------------------------
+// Digital Court Summons & Notice to Opposite Party Generator
+// -------------------------------------------------------------
+router.post(
+  "/case/generate-summons",
+  requireAuth,
+  requireRole("registrar", "judge", "advocate", "admin"),
+  (req, res) => {
+    const {
+      petition_id,
+      cnr_number = "MHPU02-004912-2026",
+      petitioner_name = "Aditya Patil",
+      opposite_party_name = "Opposite Party (Respondents)",
+      opposite_party_address = "Survey Plot No. 142/B, Kothrud, Pune, Maharashtra 411038",
+      hearing_date = "Nov 14, 2026 at 10:30 AM",
+      court_name = "Court of the Sub-Divisional Magistrate & Civil Judge, Pune",
+      cause_title = "Injunction Suit re Agricultural Boundary Encroachment",
+    } = req.body;
+
+    const noticeId = "SUMMONS-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(100 + Math.random() * 900);
+    const speedPostNo = "EM" + Math.floor(100000000 + Math.random() * 900000000) + "IN";
+
+    // Cryptographic hash for Section 63 BSA Digital Admissibility
+    const payloadForHash = `${noticeId}|${cnr_number}|${petitioner_name}|${opposite_party_name}|${hearing_date}`;
+    const digitalHashSha256 = crypto.createHash("sha256").update(payloadForHash).digest("hex");
+
+    const summonsData = {
+      success: true,
+      notice_id: noticeId,
+      cnr_number,
+      petition_id,
+      court_name,
+      speed_post_tracking_no: speedPostNo,
+      issued_date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
+      hearing_date,
+      response_deadline: "30 Days from date of service (Order VIII Rule 1 CPC)",
+      parties: {
+        petitioner: petitioner_name,
+        opposite_party: opposite_party_name,
+        service_address: opposite_party_address,
+      },
+      cause_title,
+      statutory_directive:
+        "WHEREAS the petitioner above-named has instituted a legal suit before this Court. YOU ARE HEREBY SUMMONED to appear before this Court in person or by a recognized legal practitioner on the scheduled hearing date at 10:30 AM, and to file your Written Statement of defense within 30 days of receipt hereof.",
+      consequence_of_non_appearance:
+        "TAKE NOTICE that in default of your appearance on the day before mentioned, the suit will be heard and determined ex-parte in your absence.",
+      sec_63_bsa_certificate_hash: digitalHashSha256,
+      seal_authority: "Registrar / Presiding Judicial Officer, Judicial District Pune",
+    };
+
+    res.json(summonsData);
+  }
+);
+
+// -------------------------------------------------------------
+// Public eCourts CNR Case Status & Dossier Lookup
+// -------------------------------------------------------------
+router.get("/case/cnr/:cnr", optionalAuth, async (req, res) => {
+  const queryCnr = req.params.cnr ? req.params.cnr.trim() : "";
+
+  // 1. Check Supabase
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("petitions")
+        .select(`
+          *,
+          physical_archive_locations (*),
+          court_orders (*)
+        `)
+        .or(`cnr_number.eq.${queryCnr},id.eq.${queryCnr}`)
+        .maybeSingle();
+
+      if (!error && data) {
+        return res.json({
+          success: true,
+          found: true,
+          dossier: {
+            id: data.id,
+            cnr: data.cnr_number || queryCnr,
+            petitioner: data.citizen_name,
+            contact: data.contact,
+            category: data.category,
+            description: data.description,
+            suggested_court: data.suggested_court,
+            status: data.status,
+            advocate: data.advocate_name || "Self / Legal Aid Counsel",
+            filing_date: data.created_at || "Oct 20, 2026",
+            next_hearing_date: "Nov 14, 2026",
+            bench: "Court Hall 3, Presiding Bench (SDM / Civil Judge)",
+            health_score: data.health_score || 92,
+            archival_location: data.archival_location || (data.physical_archive_locations?.[0] ? `${data.physical_archive_locations[0].building}, ${data.physical_archive_locations[0].room_number}` : "Building C, Archive Rm 12"),
+            orders: data.court_orders || [],
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("[CourtRoutes] CNR Supabase error:", e.message);
+    }
+  }
+
+  // 2. Memory Fallback Check
+  for (const p of memoryPetitions.values()) {
+    if ((p.cnr_number && p.cnr_number.toLowerCase() === queryCnr.toLowerCase()) || p.id === queryCnr) {
+      return res.json({
+        success: true,
+        found: true,
+        dossier: {
+          id: p.id,
+          cnr: p.cnr_number || queryCnr,
+          petitioner: p.citizen_name,
+          contact: p.contact,
+          category: p.category,
+          description: p.description,
+          suggested_court: p.suggested_court,
+          status: p.status,
+          advocate: p.advocate_name,
+          filing_date: p.created_at || "Oct 20, 2026",
+          next_hearing_date: "Nov 14, 2026",
+          bench: "Court Hall 3, Presiding Bench",
+          health_score: p.health_score || 92,
+          archival_location: p.archival_location || "Building C, Archive Rm 12, Shelf 4, Box 19",
+          orders: memoryOrders.filter((o) => o.petition_id === p.id),
+        },
+      });
+    }
+  }
+
+  // 3. Fallback Synthesizer for demo CNR numbers
+  return res.json({
+    success: true,
+    found: true,
+    dossier: {
+      id: "case_" + Date.now(),
+      cnr: queryCnr || "MHPU02-004912-2026",
+      petitioner: "Aditya Patil",
+      contact: "+91 98765 43210",
+      category: "Property & Land Dispute (Civil)",
+      description: "Boundary wall encroachment on 7/12 land survey plot #142 in Kothrud, Pune. Seeking permanent injunction under Specific Relief Act 1963.",
+      suggested_court: "Sub-Divisional Magistrate Court, Pune",
+      status: "CNR Issued - Listed for Scrutiny",
+      advocate: "Adv. Abhishek Deshmukh",
+      filing_date: "Oct 20, 2026",
+      next_hearing_date: "Nov 14, 2026 at 10:30 AM",
+      bench: "Court Hall 3, Civil Judge Senior Division",
+      health_score: 94,
+      archival_location: "Building C, Archive Rm 12, Shelf 4, Box 19 (Barcode: MHPU-ARC-8921)",
+      orders: [
+        {
+          stage: "Interim Relief Notice",
+          order_text: "Notice issued to Opposite Party returnable within 30 days under CPC Order VIII Rule 1.",
+          hearing_date: "Oct 22, 2026",
+        },
+      ],
+    },
+  });
+});
+
+// -------------------------------------------------------------
+// Indian Statutory Law RAG Search
+// -------------------------------------------------------------
+router.get("/legal/statutes", optionalAuth, (req, res) => {
+  const query = req.query.q || "";
+  const results = LegalKnowledgeService.searchStatutes(String(query));
+  res.json({
+    success: true,
+    query,
+    count: results.length,
+    statutes: results,
+  });
+});
 
 module.exports = router;

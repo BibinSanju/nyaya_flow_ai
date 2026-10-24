@@ -17,9 +17,12 @@ import {
   AlertCircle,
   RefreshCw,
   UserCheck,
-  Sparkles
+  Sparkles,
+  FileBadge
 } from "lucide-react";
 import { apiListPetitions, apiRecordCourtOrder } from "@/utils/api";
+import AppealAnalysisModal from "@/components/appeal-analysis-modal";
+import CourtSummonsModal from "@/components/court-summons-modal";
 
 interface CourtCase {
   cnr: string;
@@ -44,6 +47,8 @@ export default function JudgePortal() {
   const [processingOrder, setProcessingOrder] = useState(false);
   const [casesLogged, setCasesLogged] = useState<string[]>([]);
   const [causeList, setCauseList] = useState<CourtCase[]>([]);
+  const [isSummonsModalOpen, setIsSummonsModalOpen] = useState(false);
+  const [isAppealModalOpen, setIsAppealModalOpen] = useState(false);
 
   const defaultCases: CourtCase[] = [
     {
@@ -348,10 +353,28 @@ export default function JudgePortal() {
                 </p>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSummonsModalOpen(true)}
+                  className="px-2.5 py-2 rounded-lg text-xs font-medium border border-[#403429] bg-[#221c17] hover:bg-[#2e251f] text-amber-300 transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Issue Digital Summons / Court Notice (Order V CPC)"
+                >
+                  <FileBadge className="w-3.5 h-3.5" />
+                  <span>Issue Summons</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAppealModalOpen(true)}
+                  className="px-2.5 py-2 rounded-lg text-xs font-medium border border-[#4a3d31] bg-[#221c17] hover:bg-[#2e251f] text-stone-200 transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Analyze Appellate Scrutiny & Statutory Grounds (Sec 96 CPC)"
+                >
+                  <Scale className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Appeal Scrutiny</span>
+                </button>
                 <button
                   onClick={() => setActiveTab("brief")}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  className={`px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                     activeTab === "brief"
                       ? "bg-[#2a2420] text-stone-100 border border-[#4a4038]"
                       : "border border-[#2d2621] bg-[#14110f] hover:bg-[#1e1916] text-stone-400"
@@ -361,7 +384,7 @@ export default function JudgePortal() {
                 </button>
                 <button
                   onClick={() => setActiveTab("orders")}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  className={`px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                     activeTab === "orders"
                       ? "bg-[#2a2420] text-stone-100 border border-[#4a4038]"
                       : "border border-[#2d2621] bg-[#14110f] hover:bg-[#1e1916] text-stone-400"
@@ -494,6 +517,34 @@ export default function JudgePortal() {
           </div>
         </div>
       </div>
+
+      {/* Appeal Analysis Modal */}
+      <AppealAnalysisModal
+        isOpen={isAppealModalOpen}
+        onClose={() => setIsAppealModalOpen(false)}
+        caseData={{
+          cnr: activeCase.cnr,
+          petitioner: activeCase.applicant,
+          court: "District & Sessions Court, Pune",
+          category: activeCase.category,
+          description: activeCase.summary,
+        }}
+      />
+
+      {/* Court Summons Modal */}
+      <CourtSummonsModal
+        isOpen={isSummonsModalOpen}
+        onClose={() => setIsSummonsModalOpen(false)}
+        petition={{
+          id: activeCase.id,
+          cnr_number: activeCase.cnr,
+          citizen_name: activeCase.applicant,
+          category: activeCase.category,
+          description: activeCase.summary,
+          suggested_court: "District & Sessions Court, Pune",
+          opposite_party_name: activeCase.respondent,
+        }}
+      />
 
       {/* Footer */}
       <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">

@@ -13,9 +13,11 @@ import {
   LogOut,
   Archive,
   Scale,
-  RefreshCw
+  RefreshCw,
+  FileBadge
 } from "lucide-react";
 import { apiListPetitions, apiUpdatePetition } from "@/utils/api";
+import CourtSummonsModal from "@/components/court-summons-modal";
 
 interface PetitionCase {
   id: string;
@@ -35,6 +37,7 @@ export default function RegistrarDashboard() {
   const [actionLoading, setActionLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [cases, setCases] = useState<PetitionCase[]>([]);
+  const [isSummonsOpen, setIsSummonsOpen] = useState(false);
 
   const [archiveForm, setArchiveForm] = useState({
     building: "Court Complex A",
@@ -260,15 +263,25 @@ export default function RegistrarDashboard() {
                 </p>
               </div>
 
-              {selectedCase.cnrNumber ? (
-                <span className="px-3 py-1 rounded text-xs font-mono font-medium bg-[#221c18] text-stone-200 border border-[#3e352f]">
-                  CNR: {selectedCase.cnrNumber}
-                </span>
-              ) : (
-                <span className="px-2.5 py-1 rounded text-xs font-medium bg-[#201b17] text-stone-400 border border-[#332c28]">
-                  Awaiting Registrar Sign-off
-                </span>
-              )}
+              <div className="flex flex-col items-end gap-2">
+                {selectedCase.cnrNumber ? (
+                  <span className="px-3 py-1 rounded text-xs font-mono font-medium bg-[#221c18] text-stone-200 border border-[#3e352f]">
+                    CNR: {selectedCase.cnrNumber}
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded text-xs font-medium bg-[#201b17] text-stone-400 border border-[#332c28]">
+                    Awaiting Registrar Sign-off
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsSummonsOpen(true)}
+                  className="px-2.5 py-1 rounded bg-[#241e19] hover:bg-[#322922] border border-[#4a3d31] text-[11px] text-amber-300 font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <FileBadge className="w-3 h-3" />
+                  <span>Issue Digital Summons</span>
+                </button>
+              </div>
             </div>
 
             {/* Scrutiny Checklist */}
@@ -354,6 +367,20 @@ export default function RegistrarDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Court Summons Modal */}
+      <CourtSummonsModal
+        isOpen={isSummonsOpen}
+        onClose={() => setIsSummonsOpen(false)}
+        petition={{
+          id: selectedCase.id,
+          cnr_number: selectedCase.cnrNumber || "MHPU02-004912-2026",
+          citizen_name: selectedCase.applicant,
+          category: selectedCase.type,
+          description: selectedCase.summary,
+          suggested_court: selectedCase.suggestedCourt,
+        }}
+      />
 
       {/* Footer */}
       <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">

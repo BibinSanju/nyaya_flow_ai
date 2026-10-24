@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CnrTracker from "@/components/cnr-tracker";
 import {
   Scale,
   Shield,
@@ -196,6 +197,11 @@ export default function LandingPage() {
             </button>
           </div>
         </div>
+
+        {/* Live eCourts CNR Case Tracker & Digital Dossier */}
+        <section>
+          <CnrTracker />
+        </section>
 
         {/* Core System Features */}
         <section className="space-y-4">
