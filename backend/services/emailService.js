@@ -29,13 +29,17 @@ class EmailService {
       const port = parseInt(process.env.SMTP_PORT || "587", 10);
       const secure = process.env.SMTP_SECURE === "true" || port === 465;
 
+      const pass = process.env.SMTP_PASS.trim();
+      // If it's a 16-letter App Password with spaces (e.g. 'xxxx xxxx xxxx xxxx'), strip whitespace
+      const cleanPass = pass.includes(" ") ? pass.replace(/\s+/g, "") : pass;
+
       cachedTransporter = nodemailer.createTransport({
         host,
         port,
         secure,
         auth: {
           user: process.env.SMTP_USER.trim(),
-          pass: process.env.SMTP_PASS.trim(),
+          pass: cleanPass,
         },
         tls: {
           rejectUnauthorized: process.env.NODE_ENV === "production",
