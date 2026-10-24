@@ -17,9 +17,12 @@ import {
   RefreshCw,
   Mail,
   Scale,
-  Sparkles
+  Sparkles,
+  LogIn,
+  UserPlus,
+  KeyRound
 } from "lucide-react";
-import { apiSendOTP, apiVerifyOTP } from "@/utils/api";
+import { apiSendOTP, apiVerifyOTP, apiAuthLogin } from "@/utils/api";
 
 interface RoleConfig {
   id: string;
@@ -77,6 +80,7 @@ export default function AuthPage() {
     },
   ];
 
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [selectedRole, setSelectedRole] = useState<RoleConfig>(roles[0]);
   const [contact, setContact] = useState("");
   const [fullName, setFullName] = useState("");
@@ -86,10 +90,24 @@ export default function AuthPage() {
 
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isQuickLoggingIn, setIsQuickLoggingIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [devOtp, setDevOtp] = useState<string | null>(null);
+
+  // Sync mode from URL query parameter (?mode=login vs ?mode=register or ?mode=signin)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get("mode");
+      if (mode === "register" || mode === "signup" || mode === "signin") {
+        setAuthMode("register");
+      } else if (mode === "login") {
+        setAuthMode("login");
+      }
+    }
+  }, []);
 
   // Countdown timer for resend OTP
   useEffect(() => {
@@ -113,7 +131,7 @@ export default function AuthPage() {
 
   const handleSendOTP = async () => {
     if (!contact.trim()) {
-      setErrorMessage("Please enter your email address to receive your 6-digit OTP.");
+      setErrorMessage("Please enter your registered email address.");
       return;
     }
 
@@ -122,8 +140,8 @@ export default function AuthPage() {
       return;
     }
 
-    if (!fullName.trim()) {
-      setErrorMessage("Please enter your Full Name or Legal Title before requesting an OTP.");
+    if (authMode === "register" && !fullName.trim()) {
+      setErrorMessage("Please enter your Full Name or Legal Designation to register.");
       return;
     }
 
@@ -142,12 +160,12 @@ export default function AuthPage() {
           setDevOtp(res.devOtp);
           setOtp(res.devOtp);
           setSuccessMessage(
-            `Security Code Generated: ${res.devOtp} (Auto-filled below). To receive direct emails in your personal Gmail inbox, configure SMTP_USER & SMTP_PASS in backend/.env`
+            `Verification Code Generated: ${res.devOtp} (Auto-filled below). To receive direct inbox delivery, set SMTP_USER & SMTP_PASS in backend/.env`
           );
         } else {
           setDevOtp(null);
           setSuccessMessage(
-            `Security code sent to ${res.contactMasked || contact}. Please check your email inbox.`
+            `Verification code sent to ${res.contactMasked || contact}. Please check your email inbox.`
           );
         }
       } else {
@@ -172,13 +190,18 @@ export default function AuthPage() {
     setSuccessMessage(null);
 
     try {
-      const res = await apiVerifyOTP(contact, otp.trim(), selectedRole.id, fullName);
+      const nameToSend = authMode === "register" ? fullName.trim() : (fullName.trim() || selectedRole.name);
+      const res = await apiVerifyOTP(contact, otp.trim(), selectedRole.id, nameToSend);
 
       if (res.success) {
-        setSuccessMessage("Authentication confirmed. Redirecting to workspace...");
+        setSuccessMessage(
+          authMode === "login"
+            ? "Log In verified successfully. Redirecting to workspace..."
+            : "Sign In & Registration verified. Redirecting to workspace..."
+        );
         setTimeout(() => {
           router.push(selectedRole.dashboardPath);
-        }, 600);
+        }, 500);
       } else {
         throw new Error(res.error || "Verification failed");
       }
@@ -186,6 +209,41 @@ export default function AuthPage() {
       setErrorMessage(err.message || "Invalid or expired OTP. Please try again.");
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  // Instant direct login without waiting for email
+  const handleQuickLogin = async () => {
+    if (!contact.trim()) {
+      setErrorMessage("Please enter your registered email address to log in.");
+      return;
+    }
+
+    if (!contact.includes("@") || contact.trim().length < 5) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
+
+    setIsQuickLoggingIn(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const userName = fullName.trim() || (selectedRole.id === "citizen" ? "Citizen Litigant" : `Verified ${selectedRole.name}`);
+      const res = await apiAuthLogin(contact.trim(), userName, selectedRole.id);
+
+      if (res.token) {
+        setSuccessMessage(`Logged in successfully as ${selectedRole.name}. Redirecting...`);
+        setTimeout(() => {
+          router.push(selectedRole.dashboardPath);
+        }, 400);
+      } else {
+        throw new Error(res.error || "Log in failed");
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Log in failed. Please check credentials or try OTP login.");
+    } finally {
+      setIsQuickLoggingIn(false);
     }
   };
 
@@ -230,14 +288,61 @@ export default function AuthPage() {
       {/* Main Authentication Card */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-6">
         <div className="w-full max-w-xl border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 backdrop-blur-md space-y-6 shadow-xl shadow-black/40">
+          
+          {/* Dual-Mode Selector: Log In vs Sign In / Register */}
+          <div className="flex border border-[#2e2722] p-1 rounded-lg bg-[#14110f] gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("login");
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                setOtpSent(false);
+                setOtp("");
+              }}
+              className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                authMode === "login"
+                  ? "bg-[#28211c] text-stone-100 shadow border border-[#443a33]"
+                  : "text-stone-400 hover:text-stone-200"
+              }`}
+            >
+              <LogIn className="w-3.5 h-3.5 text-amber-500/90" />
+              <span>Log In</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("register");
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                setOtpSent(false);
+                setOtp("");
+              }}
+              className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                authMode === "register"
+                  ? "bg-[#28211c] text-stone-100 shadow border border-[#443a33]"
+                  : "text-stone-400 hover:text-stone-200"
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5 text-stone-300" />
+              <span>Sign In / Register</span>
+            </button>
+          </div>
+
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded border border-[#3e352f] bg-[#201b17] text-[11px] font-medium text-stone-300 mb-2.5">
               <Lock className="w-3 h-3 text-stone-400" />
-              <span>Court Verification Protocol</span>
+              <span>
+                {authMode === "login" ? "Portal Access • Log In" : "Court Verification Protocol • Sign In"}
+              </span>
             </div>
-            <h1 className="text-xl font-bold text-stone-100 tracking-tight">Portal Authentication</h1>
+            <h1 className="text-xl font-bold text-stone-100 tracking-tight">
+              {authMode === "login" ? "Portal Log In" : "Sign In & Identity Registration"}
+            </h1>
             <p className="text-xs sm:text-sm text-stone-400 mt-1">
-              Select your judicial role and authenticate using a single-use verification code.
+              {authMode === "login"
+                ? "Select your judicial role and log in to your verified court workspace."
+                : "Register your judicial credentials and generate single-use verification code."}
             </p>
           </div>
 
@@ -276,23 +381,26 @@ export default function AuthPage() {
 
           {/* Verification Form */}
           <form onSubmit={handleVerifyOTP} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-stone-300 mb-1.5">
-                Full Name / Legal Designation
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                className="bw-input"
-                placeholder="Enter your full name or legal title"
-              />
-            </div>
+            {/* Full Name input is shown for Registration / Sign In, or optionally for Log In */}
+            {authMode === "register" ? (
+              <div>
+                <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                  Full Name / Legal Designation <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  className="bw-input"
+                  placeholder="e.g. Adv. Abhishek Deshmukh / Aditya Patil"
+                />
+              </div>
+            ) : null}
 
             <div>
               <label className="block text-xs font-medium text-stone-300 mb-1.5">
-                Registered Email Address
+                {authMode === "login" ? "Registered Email Address" : "Email Address for OTP Verification"} <span className="text-rose-400">*</span>
               </label>
               <div className="flex gap-2">
                 <input
@@ -368,7 +476,7 @@ export default function AuthPage() {
             )}
 
             {/* Action Buttons */}
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
               {otpSent ? (
                 <button
                   type="submit"
@@ -378,27 +486,100 @@ export default function AuthPage() {
                   {isVerifying ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Verifying Token...</span>
+                      <span>Verifying Security Token...</span>
                     </>
                   ) : (
                     <>
-                      <span>Verify & Access Dashboard</span>
+                      <span>{authMode === "login" ? "Verify & Log In" : "Verify & Sign In"}</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleSendOTP}
-                  disabled={isSendingOtp}
-                  className="w-full bw-btn-primary py-2.5 text-sm font-semibold"
-                >
-                  {isSendingOtp ? "Generating Verification Code..." : "Request Verification Code"}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSendOTP}
+                    disabled={isSendingOtp}
+                    className="w-full bw-btn-primary py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+                  >
+                    {isSendingOtp ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Generating Verification Code...</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound className="w-4 h-4" />
+                        <span>{authMode === "login" ? "Log In with Security OTP" : "Request Verification Code"}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Quick Direct Log In Option for existing accounts */}
+                  {authMode === "login" && (
+                    <button
+                      type="button"
+                      onClick={handleQuickLogin}
+                      disabled={isQuickLoggingIn}
+                      className="w-full py-2.5 text-xs font-semibold rounded-lg bg-[#221c18] hover:bg-[#2b241f] border border-[#3e352f] text-stone-200 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isQuickLoggingIn ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Authenticating Workspace...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LogIn className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Quick Direct Log In as {selectedRole.name}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </form>
+
+          {/* Toggle between Log In and Sign In */}
+          <div className="pt-2 border-t border-[#26201c] text-center text-xs text-stone-400">
+            {authMode === "login" ? (
+              <p>
+                Don&apos;t have a verified account yet?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("register");
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                    setOtpSent(false);
+                    setOtp("");
+                  }}
+                  className="text-stone-200 hover:text-white font-medium underline underline-offset-4 cursor-pointer"
+                >
+                  Sign In / Register here
+                </button>
+              </p>
+            ) : (
+              <p>
+                Already registered in the judicial registry?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("login");
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                    setOtpSent(false);
+                    setOtp("");
+                  }}
+                  className="text-stone-200 hover:text-white font-medium underline underline-offset-4 cursor-pointer"
+                >
+                  Log In here
+                </button>
+              </p>
+            )}
+          </div>
         </div>
       </main>
 

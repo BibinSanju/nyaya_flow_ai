@@ -86,6 +86,7 @@ export default function CitizenDashboard() {
   // AI Classification State
   const [classificationResult, setClassificationResult] = useState<any>(null);
   const [analyzingCase, setAnalyzingCase] = useState(false);
+  const [caseValidationError, setCaseValidationError] = useState<string | null>(null);
 
   // Counsel & Submission State
   const [selectedCounsel, setSelectedCounsel] = useState<string | null>("counsel-1");
@@ -298,14 +299,45 @@ export default function CitizenDashboard() {
   };
 
   const handleClassify = async () => {
-    if (!problemDescription.trim()) return;
+    setCaseValidationError(null);
+    const text = problemDescription.trim();
+
+    if (!text) {
+      setCaseValidationError("Please enter your dispute narrative before proceeding.");
+      return;
+    }
+
+    // Fast pre-check for conversational greetings or trivial banter
+    const trivialGreetingRegex = /^(hi|hello|hey|namaste|vanakkam|good\s+(morning|afternoon|evening|day)|how\s+are\s+you|testing|test(\s+123)?|what\s+is\s+up|sup)[\s.!?,]*$/i;
+    if (trivialGreetingRegex.test(text) || text.length < 12) {
+      setCaseValidationError(
+        `"${text}" is not recognized as a valid legal case. Casual greetings or conversational questions cannot be processed for judicial petition filing. Please describe your concrete legal grievance or dispute (e.g. land encroachment, cheque bounce, theft, or breach of contract).`
+      );
+      return;
+    }
+
     setAnalyzingCase(true);
     try {
-      const res = await apiClassifyCase(problemDescription, personalInfo.language);
+      const res = await apiClassifyCase(text, personalInfo.language);
+
+      if (!res || res.success === false || res.isValidCase === false) {
+        setCaseValidationError(
+          res?.error ||
+          res?.reason ||
+          "The entered sentence does not describe a valid court grievance. Please provide factual details of the dispute or incident."
+        );
+        return;
+      }
+
       setClassificationResult(res);
+      setCaseValidationError(null);
       setWizardStep(2);
-    } catch (err) {
-      console.error("Classification error:", err);
+    } catch (err: any) {
+      console.warn("Classification error:", err);
+      setCaseValidationError(
+        err?.message ||
+        "The entered text is not a valid legal dispute description. Please describe your legal dispute (parties involved, property, or grievance)."
+      );
     } finally {
       setAnalyzingCase(false);
     }
@@ -583,10 +615,67 @@ export default function CitizenDashboard() {
                     <textarea
                       rows={5}
                       value={problemDescription}
-                      onChange={(e) => setProblemDescription(e.target.value)}
+                      onChange={(e) => {
+                        setProblemDescription(e.target.value);
+                        if (caseValidationError) setCaseValidationError(null);
+                      }}
                       placeholder="e.g. Neighbor has constructed a masonry wall encroaching onto my agricultural plot #142 in Kothrud..."
-                      className="bw-input leading-relaxed"
+                      className={`bw-input leading-relaxed ${
+                        caseValidationError ? "border-rose-500/70 focus:border-rose-400 bg-rose-950/10" : ""
+                      }`}
                     />
+
+                    {/* Invalid Case Error Banner */}
+                    {caseValidationError && (
+                      <div className="flex items-start gap-2.5 p-3 rounded-lg border border-rose-500/40 bg-rose-950/30 text-rose-200 text-xs leading-relaxed animate-in fade-in duration-200 shadow-sm">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1.5">
+                          <p className="font-semibold text-rose-300">Invalid Case Description (Rejected)</p>
+                          <p>{caseValidationError}</p>
+                          <div className="pt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-stone-300 border-t border-rose-500/20">
+                            <span className="text-stone-400 font-medium">Click to try a valid case:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProblemDescription(
+                                  "Neighbor has constructed a masonry boundary wall encroaching 3 feet onto my registered agricultural plot #142 in Kothrud, Pune without statutory consent."
+                                );
+                                setCaseValidationError(null);
+                              }}
+                              className="text-stone-300 hover:text-white underline underline-offset-2 cursor-pointer"
+                            >
+                              Land encroachment
+                            </button>
+                            <span className="text-stone-500">•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProblemDescription(
+                                  "Cheque of ₹2,50,000 issued towards commercial goods supply was dishonoured by bank due to insufficient funds under Section 138 NI Act."
+                                );
+                                setCaseValidationError(null);
+                              }}
+                              className="text-stone-300 hover:text-white underline underline-offset-2 cursor-pointer"
+                            >
+                              Cheque bounce
+                            </button>
+                            <span className="text-stone-500">•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProblemDescription(
+                                  "Consumer complaint against dealer for delivering defective home appliance and refusing statutory warranty repair or refund."
+                                );
+                                setCaseValidationError(null);
+                              }}
+                              className="text-stone-300 hover:text-white underline underline-offset-2 cursor-pointer"
+                            >
+                              Consumer defect
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">

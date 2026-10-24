@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { supabase, isSupabaseConfigured } = require("../config/supabase");
 const { requireAuth, requireRole, optionalAuth } = require("../middleware/authMiddleware");
+const CaseValidationService = require("../services/caseValidationService");
 
 // In-memory fallback if Supabase is not configured
 const memoryPetitions = new Map();
@@ -196,6 +197,17 @@ router.post(
     const status = body.status || "Scrutiny Pending";
     const language = body.language || "English";
     const healthScore = body.health_score || body.healthScore || 90;
+
+    // Validate petition narrative before filing
+    const validation = await CaseValidationService.validateCaseNarrative(description, language);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        isValidCase: false,
+        error: `Cannot lodge petition: ${validation.reason}`,
+        detectedTopic: validation.detectedTopic,
+      });
+    }
 
     if (isSupabaseConfigured() && supabase) {
       try {
@@ -415,8 +427,22 @@ router.post(
 );
 
 // Case Classification (Indian Law Statutory Checklist)
-router.post("/case/classify", optionalAuth, (req, res) => {
+router.post("/case/classify", optionalAuth, async (req, res) => {
   const { description = "", language = "English" } = req.body;
+
+  // Validate case narrative with LLM / Judicial Scrutiny Engine
+  const validation = await CaseValidationService.validateCaseNarrative(description, language);
+  if (!validation.isValid) {
+    return res.status(400).json({
+      success: false,
+      isValidCase: false,
+      error: validation.reason,
+      detectedTopic: validation.detectedTopic,
+      reason: validation.reason,
+      verifiedBy: validation.verifiedBy,
+    });
+  }
+
   const lower = description.toLowerCase();
 
   let category = "Property & Civil Law";
@@ -504,8 +530,19 @@ router.post(
   "/police/bns-suggest",
   requireAuth,
   requireRole("police", "admin"),
-  (req, res) => {
+  async (req, res) => {
     const { incident_report = "" } = req.body;
+
+    const validation = await CaseValidationService.validateCaseNarrative(incident_report);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        isValidCase: false,
+        error: `Invalid incident narrative: ${validation.reason}`,
+        suggestions: [],
+      });
+    }
+
     const lower = incident_report.toLowerCase();
 
     let suggestions = [

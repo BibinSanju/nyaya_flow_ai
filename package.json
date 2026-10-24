@@ -12,6 +12,7 @@
     "build:frontend": "npm --prefix frontend run build",
     "start": "npm --prefix frontend run start",
     "start:backend": "npm --prefix backend run start",
+    "postinstall": "npm --prefix frontend install",
     "lint": "npm --prefix frontend run lint"
   }
 }

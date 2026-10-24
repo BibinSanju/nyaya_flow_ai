@@ -42,6 +42,7 @@ export default function PolicePortal() {
   const [selectedBns, setSelectedBns] = useState<string[]>([]);
   const [officerConfirmed, setOfficerConfirmed] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ fullName?: string; email?: string } | null>(null);
+  const [incidentValidationError, setIncidentValidationError] = useState<string | null>(null);
 
   // Voice Recording & Speech-to-Text State
   const [isRecording, setIsRecording] = useState(false);
@@ -235,15 +236,33 @@ export default function PolicePortal() {
   const selectedFir = firs.find((f) => f.id === selectedFirId) || firs[0];
 
   const handleAnalyzeBns = async () => {
-    if (!incidentText.trim()) return;
+    setIncidentValidationError(null);
+    const text = incidentText.trim();
+    if (!text) {
+      setIncidentValidationError("Please enter an incident narrative to analyze.");
+      return;
+    }
+
+    const trivialGreetingRegex = /^(hi|hello|hey|namaste|vanakkam|good\s+(morning|afternoon|evening|day)|how\s+are\s+you|testing|test(\s+123)?|what\s+is\s+up|sup)[\s.!?,]*$/i;
+    if (trivialGreetingRegex.test(text) || text.length < 12) {
+      setIncidentValidationError(
+        `"${text}" is not recognized as a cognizable offense or incident report. Casual greetings cannot be mapped to Bharatiya Nyaya Sanhita (BNS) penal sections. Please enter details of the reported incident.`
+      );
+      return;
+    }
+
     setAnalyzingBns(true);
     try {
-      const res = await apiSuggestBns(incidentText);
+      const res = await apiSuggestBns(text);
       if (res.success && res.suggestions) {
         setBnsSuggestions(res.suggestions);
+        setIncidentValidationError(null);
+      } else {
+        setIncidentValidationError(res.error || "Could not analyze incident narrative.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setIncidentValidationError(err?.message || "Invalid incident narrative. Please provide incident details.");
     } finally {
       setAnalyzingBns(false);
     }
@@ -547,10 +566,25 @@ export default function PolicePortal() {
               <textarea
                 rows={5}
                 value={incidentText}
-                onChange={(e) => setIncidentText(e.target.value)}
+                onChange={(e) => {
+                  setIncidentText(e.target.value);
+                  if (incidentValidationError) setIncidentValidationError(null);
+                }}
                 placeholder="e.g. Accused broke the padlock of complainant's shop after 11 PM and stole cash register contents..."
-                className="bw-input leading-relaxed"
+                className={`bw-input leading-relaxed ${
+                  incidentValidationError ? "border-rose-500/70 focus:border-rose-400 bg-rose-950/10" : ""
+                }`}
               />
+
+              {incidentValidationError && (
+                <div className="flex items-start gap-2.5 p-3 rounded-lg border border-rose-500/40 bg-rose-950/30 text-rose-200 text-xs leading-relaxed animate-in fade-in duration-200 shadow-sm">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-1">
+                    <p className="font-semibold text-rose-300">Invalid Incident Narrative (Ignored)</p>
+                    <p>{incidentValidationError}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end">

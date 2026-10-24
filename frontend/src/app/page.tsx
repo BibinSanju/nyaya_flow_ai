@@ -136,8 +136,15 @@ export default function LandingPage() {
             </button>
 
             <Link
-              href="/auth"
-              className="px-3.5 py-1.5 text-xs font-semibold rounded bg-[#38302b] hover:bg-[#4a4039] border border-[#574b40] text-white transition-colors"
+              href="/auth?mode=login"
+              className="px-3 py-1.5 text-xs font-medium rounded border border-[#3f3832] bg-[#1a1715] hover:bg-[#26211e] text-stone-200 hover:text-white transition-colors"
+            >
+              Log In
+            </Link>
+
+            <Link
+              href="/auth?mode=register"
+              className="px-3.5 py-1.5 text-xs font-semibold rounded bg-[#38302b] hover:bg-[#4a4039] border border-[#574b40] text-white transition-colors shadow-sm"
             >
               Sign In
             </Link>
@@ -162,17 +169,23 @@ export default function LandingPage() {
 
           <div className="pt-2 flex flex-wrap gap-3">
             <Link
-              href="/auth"
+              href="/auth?mode=login"
               className="px-5 py-2.5 text-xs sm:text-sm font-semibold rounded bg-[#2e2722] hover:bg-[#3d342e] border border-[#5c4e43] text-stone-100 transition-colors inline-flex items-center gap-2"
             >
-              <span>Access Workspaces</span>
+              <span>Log In to Workspace</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
-              href="/citizen/dashboard"
+              href="/auth?mode=register"
               className="px-5 py-2.5 text-xs sm:text-sm font-medium rounded border border-[#3f3832] bg-[#1a1715] hover:bg-[#26211e] text-stone-200 transition-colors"
             >
-              File Citizen Grievance
+              Sign In / Register New Account
+            </Link>
+            <Link
+              href="/citizen/dashboard"
+              className="px-5 py-2.5 text-xs sm:text-sm font-medium rounded border border-[#3f3832] bg-[#1a1715] hover:bg-[#26211e] text-stone-300 hover:text-stone-100 transition-colors"
+            >
+              File Grievance
             </Link>
             <button
               onClick={handleOpenChat}
@@ -271,7 +284,10 @@ export default function LandingPage() {
             <p>© 2026 NyayaFlow Judicial Platform.</p>
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/auth" className="text-stone-300 hover:text-white underline underline-offset-4">
+            <Link href="/auth?mode=login" className="text-stone-300 hover:text-white underline underline-offset-4">
+              Log In
+            </Link>
+            <Link href="/auth?mode=register" className="text-stone-300 hover:text-white underline underline-offset-4">
               Sign In Portal
             </Link>
           </div>

@@ -101,11 +101,27 @@ export async function apiVerifyOTP(
   return res;
 }
 
-export async function apiAuthLogin(email: string, fullName: string, role: string, phone?: string) {
-  return await jsonFetch("/api/auth/login", {
+export async function apiAuthLogin(email: string, fullName: string = "Authorized User", role: string = "citizen", phone?: string) {
+  const res = await jsonFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, full_name: fullName, role, phone }),
   });
+
+  if (res.token && typeof window !== "undefined") {
+    localStorage.setItem("nyayaflow_token", res.token);
+    localStorage.setItem(
+      "nyayaflow_user",
+      JSON.stringify({
+        id: res.id,
+        fullName: res.full_name || fullName,
+        role: res.role || role,
+        email: res.email || email,
+        phone: res.phone || phone,
+      })
+    );
+  }
+
+  return res;
 }
 
 export async function apiAuthLogout() {
