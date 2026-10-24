@@ -21,19 +21,17 @@ class EmailService {
    * Get or initialize Nodemailer transporter.
    * Strictly enforces that unconfigured SMTP fails instead of silently simulating success.
    */
-  static async getTransporter() {
+  static async getTransporter(customPort = null, customSecure = null) {
     if (this.isSmtpConfigured()) {
-      if (cachedTransporter) return cachedTransporter;
-
-      const host = process.env.SMTP_HOST.trim();
-      const port = parseInt(process.env.SMTP_PORT || "587", 10);
-      const secure = process.env.SMTP_SECURE === "true" || port === 465;
+      const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+      const port = customPort !== null ? customPort : parseInt(process.env.SMTP_PORT || "465", 10);
+      const secure = customSecure !== null ? customSecure : (process.env.SMTP_SECURE === "true" || port === 465);
 
       const pass = process.env.SMTP_PASS.trim();
       // If it's a 16-letter App Password with spaces (e.g. 'xxxx xxxx xxxx xxxx'), strip whitespace
       const cleanPass = pass.includes(" ") ? pass.replace(/\s+/g, "") : pass;
 
-      cachedTransporter = nodemailer.createTransport({
+      return nodemailer.createTransport({
         host,
         port,
         secure,
@@ -41,12 +39,14 @@ class EmailService {
           user: process.env.SMTP_USER.trim(),
           pass: cleanPass,
         },
+        family: 4, // Force IPv4 to eliminate Windows IPv6 network hanging
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 12000,
         tls: {
           rejectUnauthorized: process.env.NODE_ENV === "production",
         },
       });
-
-      return cachedTransporter;
     }
 
     // Explicit test mailer allowed ONLY if ALLOW_DEV_TEST_MAILER=true is set in testing scripts
@@ -198,24 +198,31 @@ class EmailService {
     try {
       info = await transporter.sendMail(mailOptions);
     } catch (sendErr) {
-      // Sanitize error messages to eliminate secrets and provide actionable troubleshooting guidance
-      const rawMsg = sendErr.message || "";
-      if (rawMsg.includes("535") || rawMsg.includes("Username and Password not accepted") || rawMsg.includes("BadCredentials")) {
-        throw new Error(
-          "Gmail SMTP Authentication Failed: Invalid credentials. For Gmail, you must use your full Gmail address in SMTP_USER and a 16-character Google App Password (not your standard Google account password) in SMTP_PASS. Generate one at Google Account > Security > 2-Step Verification > App Passwords."
-        );
+      console.warn(`[EmailService] Primary SMTP delivery attempt on port ${process.env.SMTP_PORT || "465"} failed: ${sendErr.message}. Attempting automated fallback port...`);
+
+      // Attempt alternate port automatically (465 SSL <-> 587 STARTTLS)
+      const currentPort = parseInt(process.env.SMTP_PORT || "465", 10);
+      const altPort = currentPort === 465 ? 587 : 465;
+      const altSecure = altPort === 465;
+
+      try {
+        const altTransporter = await this.getTransporter(altPort, altSecure);
+        info = await altTransporter.sendMail(mailOptions);
+        console.log(`[EmailService] Alternate port ${altPort} delivery succeeded!`);
+      } catch (fallbackErr) {
+        const rawMsg = fallbackErr.message || sendErr.message || "";
+        if (rawMsg.includes("535") || rawMsg.includes("Username and Password not accepted") || rawMsg.includes("BadCredentials")) {
+          throw new Error(
+            "Gmail SMTP Authentication Failed: Invalid credentials. For Gmail, you must use your full Gmail address in SMTP_USER and a 16-character Google App Password in SMTP_PASS."
+          );
+        }
+        if (rawMsg.includes("ECONNREFUSED") || rawMsg.includes("ETIMEDOUT") || rawMsg.includes("ENOTFOUND")) {
+          throw new Error(
+            `SMTP Connection Timeout on ${process.env.SMTP_HOST || "smtp.gmail.com"}. Local network/firewall blocked outbound SMTP connection.`
+          );
+        }
+        throw new Error(`SMTP Mail delivery failed: ${rawMsg}`);
       }
-      if (rawMsg.includes("ECONNREFUSED") || rawMsg.includes("ETIMEDOUT") || rawMsg.includes("ENOTFOUND")) {
-        throw new Error(
-          `Could not connect to SMTP server ${process.env.SMTP_HOST || "smtp.gmail.com"} on port ${process.env.SMTP_PORT || "587"}. Please verify network connectivity and SMTP host/port configuration.`
-        );
-      }
-      if (rawMsg.includes("550") || rawMsg.includes("5.7.1")) {
-        throw new Error(
-          "Gmail SMTP Sender Rejection: The authenticated Google account does not have permission to send from this address. Ensure the sender address matches your authenticated Gmail."
-        );
-      }
-      throw new Error(`SMTP Mail delivery failed: ${rawMsg}`);
     }
 
     // Verify provider acceptance

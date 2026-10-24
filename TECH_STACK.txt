@@ -1,0 +1,121 @@
+================================================================================
+                        NYAYAFLOW AI - SYSTEM TECH STACK
+================================================================================
+Platform: NyayaFlow (e-Courts Digital Judicial Modernization Platform)
+Generated: October 2026
+Workspace: nyaya_flow_AI
+================================================================================
+
+1. SYSTEM ARCHITECTURE
+--------------------------------------------------------------------------------
+Architecture Pattern: Monorepo / Decoupled Client-Server Architecture
+Frontend Port:        http://localhost:3000
+Backend Port:         http://localhost:5000 (127.0.0.1:5000)
+Proxy Engine:         Next.js App Router API Proxies & Rewrites
+Orchestration:        Concurrently (runs Next.js & Express in parallel)
+
+
+2. FRONTEND TIER
+--------------------------------------------------------------------------------
+Framework:            Next.js 16.2.10 (App Router, Turbopack, React Server Components)
+Core UI Library:      React 19.2.4 & React-DOM 19.2.4
+Language:             TypeScript 5.x
+Styling:              Tailwind CSS 4.x (@tailwindcss/postcss), Vanilla CSS, CSS Variables
+Design Aesthetic:     Dark Judicial Theme (#12100e, warm stone palette, gold accents),
+                      Glassmorphism, Accessible Micro-interactions
+Animation & Motion:   Framer Motion 12.42.2, GSAP 3.15.0
+Icons:                Lucide React 1.25.0
+Data Visualization:   Recharts 3.9.2 (Scrutiny velocity, CNR case pendency charts)
+Voice Agent Engine:   - Web Speech API (window.SpeechRecognition / webkitSpeechRecognition)
+                        for real-time in-browser live captioning
+                      - SpeechSynthesis API (window.speechSynthesis) for automated 
+                        judicial voice text-to-speech (TTS) readout
+                      - HTML5 MediaRecorder API for audio capture (WebM/Opus, WAV)
+
+
+3. BACKEND TIER
+--------------------------------------------------------------------------------
+A. Node.js & Express Core Service (Primary Workflow Engine)
+   - Runtime:         Node.js (v18+)
+   - Framework:       Express 4.21.2
+   - File Uploads:    Multer 1.4.5-lts.1 (Disk storage for deeds, PDFs, audio)
+   - OCR Engine:      Tesseract.js 5.1.1 (Scanned document text extraction)
+   - PDF Engine:      pdf-parse 1.1.1 (PDF parsing, text mining, notary block audit)
+   - Crypto Hashing:  Node.js Native Crypto (SHA-256 tamper-evident hashes for 
+                      Section 63 BSA electronic admissibility)
+   - CORS Middleware: cors 2.8.5 (Configured for localhost, localtunnels, Vercel)
+   - Rate Limiting:   In-memory sliding-window IP rate limiter for auth routes
+
+B. Python & FastAPI Advisory Sub-Service
+   - Framework:       FastAPI 1.0.0
+   - Validation:      Pydantic v2 (schemas.py)
+   - ASGI Server:     Uvicorn
+
+
+4. AI, LLM & SPEECH INFRASTRUCTURE
+--------------------------------------------------------------------------------
+Speech-to-Text (STT): Groq Cloud AI - Whisper Large v3 Turbo & Whisper Large v3
+                      - Supported Languages: English (en), Hindi (hi), Marathi (mr),
+                        Tamil (ta), Telugu (te), Kannada (kn), Bengali (bn), Gujarati (gu)
+                      - ISO-639-1 automatic language normalization & retry fallback
+                      - Zero-drop resilient backup to browser speech engine
+
+Conversational LLM:   Groq Cloud Inference (SDK: groq-sdk 1.6.0)
+                      - Models: openai/gpt-oss-120b, openai/gpt-oss-20b, 
+                        qwen/qwen3.8-27b, allam-2-7b
+                      - Domain Knowledge: Bharatiya Nyaya Sanhita (BNS 2023), 
+                        Bharatiya Nagarik Suraksha Sanhita (BNSS 2023), 
+                        Bharatiya Sakshya Adhiniyam (BSA 2023),
+                        CPC 1908 (Order 39 Rules 1 & 2), Specific Relief Act 1963
+
+Statutory Service:    Google Gemini API (google-generativeai, Gemini 1.5 Flash / Pro)
+                      - Legal precedent matching, automated case summarization,
+                        FIR penal section cross-referencing
+
+Scrutiny Engine:      NyayaFlow Proprietary Algorithms
+                      - 85% OCR baseline threshold compliance
+                      - Cross-registry duplicate petition detection
+                      - 16-character alphanumeric CNR allocation protocol
+
+
+5. DATABASE & CLOUD STORAGE
+--------------------------------------------------------------------------------
+Cloud Database:       Supabase PostgreSQL (@supabase/supabase-js 2.118.0)
+Database Tables:      - users (Litigants, Advocates, Police, Registrars, Judges, Admins)
+                      - documents (Petitions, 7/12 land records, panchnama, affidavits)
+                      - petitions (e-Courts filings, scrutiny flags, CNR numbers)
+                      - otps (Verification codes, rate counters, timestamps)
+Resilience Layer:     Automated In-Memory / Supabase Pending Failover Mode
+
+
+6. AUTHENTICATION & SECURITY
+--------------------------------------------------------------------------------
+Auth Protocol:        Passwordless Email OTP Authentication (6-digit one-time passcodes)
+Password Encryption:  bcryptjs 2.4.3
+Token Security:       JSON Web Tokens (jsonwebtoken 9.0.2)
+Evidence Chain:       SHA-256 Cryptographic Checksums (Tamper-evident chain of custody)
+Role-Based Access:    Strict Partitioning across 6 Specialized Portals:
+                      1. /citizen    - Grievance intake, CNR tracking, advocate lookup
+                      2. /advocate   - Case briefs, Vakalatnama filing, precedent search
+                      3. /police     - Crime narrative dictation, BNS suggestions, evidence
+                      4. /registrar  - Document scrutiny queue, CNR number generator
+                      5. /judge      - Precedent analysis, interim relief, order drafting
+                      6. /admin      - Telemetry, cluster health, immutable audit logs
+
+
+7. NOTIFICATION & EMAIL SERVICES
+--------------------------------------------------------------------------------
+Email Client:         Nodemailer 6.10.0
+Transport:            Gmail SMTP (smtp.gmail.com:465 SSL / 587 STARTTLS with IPv4)
+Authentication:       Google Account 16-character App Password (SMTP_PASS)
+Templates:            HTML Email Templates for Judicial OTPs & Digital Summons Notices
+Offline Mode:         Console terminal OTP output fallback if SMTP unconfigured / blocked
+
+
+8. DEPLOYMENT & DEVOPS
+--------------------------------------------------------------------------------
+Frontend Hosting:     Vercel (Edge Network, Next.js Serverless runtime)
+Backend Hosting:      Render / Railway / Docker Container Service
+Environment Config:   Dotenv 16.4.7 (.env configuration with production separation)
+Dev Runner:           Concurrently (Unified npm run dev:all script)
+================================================================================
