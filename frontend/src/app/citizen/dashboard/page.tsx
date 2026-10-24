@@ -22,7 +22,13 @@ import {
   Trash2,
   Mic,
   Square,
-  Loader2
+  Loader2,
+  Edit2,
+  Save,
+  MapPin,
+  Mail,
+  Phone as PhoneIcon,
+  User
 } from "lucide-react";
 import {
   apiClassifyCase,
@@ -72,12 +78,23 @@ export default function CitizenDashboard() {
 
   // Form State
   const [personalInfo, setPersonalInfo] = useState({
-    name: "Aditya Patil",
-    phone: "+91 98765 43210",
-    district: "Pune",
-    state: "Maharashtra",
-    language: "Marathi",
-    idProof: "Aadhaar: 5544-6677-8899",
+    name: "",
+    email: "",
+    phone: "",
+    district: "",
+    state: "",
+    language: "English",
+    idProof: "",
+  });
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editProfileForm, setEditProfileForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    district: "",
+    state: "",
+    language: "English",
+    idProof: "",
   });
   const [problemDescription, setProblemDescription] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -113,17 +130,57 @@ export default function CitizenDashboard() {
       const stored = localStorage.getItem("nyayaflow_user");
       if (stored) {
         const u = JSON.parse(stored);
-        if (u.fullName) {
-          setPersonalInfo((prev) => ({
-            ...prev,
-            name: u.fullName,
-            phone: u.email || u.phone || prev.phone,
-          }));
-        }
+        const rawContact = u.email || u.phone || "";
+        const isEmailContact = typeof rawContact === "string" && rawContact.includes("@");
+        const loaded = {
+          name: u.fullName || u.name || "Citizen Litigant",
+          email: isEmailContact ? rawContact : (u.email || ""),
+          phone: !isEmailContact ? rawContact : (u.phone || ""),
+          district: u.district || "",
+          state: u.state || "",
+          language: u.language || "English",
+          idProof: u.idProof || "",
+        };
+        setPersonalInfo(loaded);
+        setEditProfileForm(loaded);
+      } else {
+        const defaultGuest = {
+          name: "Citizen Litigant",
+          email: "",
+          phone: "",
+          district: "",
+          state: "",
+          language: "English",
+          idProof: "",
+        };
+        setPersonalInfo(defaultGuest);
+        setEditProfileForm(defaultGuest);
       }
     } catch (e) {}
     loadPetitionsAndDocs();
   }, []);
+
+  const handleSaveProfile = () => {
+    setPersonalInfo(editProfileForm);
+    setIsEditingProfile(false);
+    try {
+      const stored = localStorage.getItem("nyayaflow_user");
+      const current = stored ? JSON.parse(stored) : {};
+      const updated = {
+        ...current,
+        fullName: editProfileForm.name,
+        email: editProfileForm.email,
+        phone: editProfileForm.phone,
+        district: editProfileForm.district,
+        state: editProfileForm.state,
+        language: editProfileForm.language,
+        idProof: editProfileForm.idProof,
+      };
+      localStorage.setItem("nyayaflow_user", JSON.stringify(updated));
+    } catch (e) {
+      console.warn("Failed to persist user profile:", e);
+    }
+  };
 
   const loadPetitionsAndDocs = async () => {
     setIsLoadingPetitions(true);
@@ -362,12 +419,16 @@ export default function CitizenDashboard() {
         : "In-Person (Self)";
 
     const newPetition = {
-      citizen_name: personalInfo.name,
-      contact: personalInfo.phone,
+      citizen_name: personalInfo.name || "Citizen Litigant",
+      contact: personalInfo.email || personalInfo.phone || "Not provided",
       category: classificationResult?.category || "Property & Land Dispute (Civil)",
       description: problemDescription,
       status: "Scrutiny Pending",
-      suggested_court: classificationResult?.suggested_court || "Sub-Divisional Magistrate Court, Pune",
+      suggested_court:
+        classificationResult?.suggested_court ||
+        (personalInfo.district
+          ? `District & Subordinate Court, ${personalInfo.district}`
+          : "District & Subordinate Court"),
       advocate_name: advocateName,
       language: personalInfo.language || "English",
       health_score: 92,
@@ -429,8 +490,10 @@ export default function CitizenDashboard() {
             </button>
 
             <div className="text-right hidden sm:block">
-              <p className="text-xs font-semibold text-stone-200">{personalInfo.name}</p>
-              <p className="text-[11px] text-stone-400 font-mono">{personalInfo.phone.includes("@") ? personalInfo.phone : `${personalInfo.district}, ${personalInfo.state}`}</p>
+              <p className="text-xs font-semibold text-stone-200">{personalInfo.name || "Citizen Litigant"}</p>
+              <p className="text-[11px] text-stone-400 font-mono">
+                {personalInfo.email || personalInfo.phone || ([personalInfo.district, personalInfo.state].filter(Boolean).join(", ") || "Pan-India")}
+              </p>
             </div>
             <Link
               href="/auth"
@@ -487,15 +550,140 @@ export default function CitizenDashboard() {
 
           {/* Litigant Details Panel */}
           <div className="border border-[#2e2722] rounded-xl p-5 bg-[#181513]/95 backdrop-blur-md space-y-3 shadow-xl shadow-black/40">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
-              Litigant Profile
-            </h4>
-            <div className="space-y-1.5 text-xs text-stone-400">
-              <p><strong className="text-stone-200">Name:</strong> {personalInfo.name}</p>
-              <p><strong className="text-stone-200">Phone:</strong> {personalInfo.phone}</p>
-              <p><strong className="text-stone-200">Jurisdiction:</strong> {personalInfo.district}, {personalInfo.state}</p>
-              <p><strong className="text-stone-200">Aadhaar:</strong> 5544-6677-8899</p>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
+                Litigant Profile
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditProfileForm(personalInfo);
+                  setIsEditingProfile(!isEditingProfile);
+                }}
+                className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3 h-3" />
+                <span>{isEditingProfile ? "Cancel" : "Edit Profile"}</span>
+              </button>
             </div>
+
+            {isEditingProfile ? (
+              <div className="space-y-2.5 pt-1 text-xs animate-in fade-in duration-200">
+                <div>
+                  <label className="text-[10px] text-stone-400 block mb-0.5">Full Name</label>
+                  <input
+                    type="text"
+                    value={editProfileForm.name}
+                    onChange={(e) => setEditProfileForm({ ...editProfileForm, name: e.target.value })}
+                    className="bw-input py-1 text-xs"
+                    placeholder="Enter full name"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-stone-400 block mb-0.5">Email Address</label>
+                  <input
+                    type="email"
+                    value={editProfileForm.email}
+                    onChange={(e) => setEditProfileForm({ ...editProfileForm, email: e.target.value })}
+                    className="bw-input py-1 text-xs"
+                    placeholder="name@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-stone-400 block mb-0.5">Phone (Optional)</label>
+                  <input
+                    type="text"
+                    value={editProfileForm.phone}
+                    onChange={(e) => setEditProfileForm({ ...editProfileForm, phone: e.target.value })}
+                    className="bw-input py-1 text-xs"
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-stone-400 block mb-0.5">State</label>
+                    <input
+                      type="text"
+                      value={editProfileForm.state}
+                      onChange={(e) => setEditProfileForm({ ...editProfileForm, state: e.target.value })}
+                      className="bw-input py-1 text-xs"
+                      placeholder="e.g. Tamil Nadu"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-stone-400 block mb-0.5">District</label>
+                    <input
+                      type="text"
+                      value={editProfileForm.district}
+                      onChange={(e) => setEditProfileForm({ ...editProfileForm, district: e.target.value })}
+                      className="bw-input py-1 text-xs"
+                      placeholder="e.g. Chennai"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-stone-400 block mb-0.5">Aadhaar / ID Proof (Optional)</label>
+                  <input
+                    type="text"
+                    value={editProfileForm.idProof}
+                    onChange={(e) => setEditProfileForm({ ...editProfileForm, idProof: e.target.value })}
+                    className="bw-input py-1 text-xs font-mono"
+                    placeholder="Leave blank or enter ID"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveProfile}
+                  className="w-full mt-2 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-stone-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2 text-xs text-stone-400">
+                <p>
+                  <strong className="text-stone-200">Name:</strong>{" "}
+                  <span className="text-stone-100">{personalInfo.name || "Citizen Litigant"}</span>
+                </p>
+                {personalInfo.email && (
+                  <p>
+                    <strong className="text-stone-200">Email:</strong>{" "}
+                    <span className="text-stone-300 font-mono text-[11px]">{personalInfo.email}</span>
+                  </p>
+                )}
+                {personalInfo.phone && (
+                  <p>
+                    <strong className="text-stone-200">Phone:</strong>{" "}
+                    <span className="text-stone-300 font-mono text-[11px]">{personalInfo.phone}</span>
+                  </p>
+                )}
+                {!personalInfo.email && !personalInfo.phone && (
+                  <p>
+                    <strong className="text-stone-200">Contact:</strong>{" "}
+                    <span className="text-stone-500 italic">Not provided</span>
+                  </p>
+                )}
+                <p>
+                  <strong className="text-stone-200">Jurisdiction:</strong>{" "}
+                  {personalInfo.district || personalInfo.state ? (
+                    <span className="text-stone-300">
+                      {[personalInfo.district, personalInfo.state].filter(Boolean).join(", ")}
+                    </span>
+                  ) : (
+                    <span className="text-stone-500 italic">Not specified (Pan-India)</span>
+                  )}
+                </p>
+                <p>
+                  <strong className="text-stone-200">Aadhaar:</strong>{" "}
+                  {personalInfo.idProof ? (
+                    <span className="text-stone-300 font-mono text-[11px]">{personalInfo.idProof}</span>
+                  ) : (
+                    <span className="text-stone-500 italic">Not provided (Optional)</span>
+                  )}
+                </p>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -686,29 +874,32 @@ export default function CitizenDashboard() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     <div>
                       <label className="block font-medium text-stone-300 mb-1">
-                        Language
+                        Preferred Language
                       </label>
                       <select
-                        value={personalInfo.language}
+                        value={personalInfo.language || "English"}
                         onChange={(e) => setPersonalInfo({ ...personalInfo, language: e.target.value })}
                         className="bw-input"
                       >
-                        <option value="Marathi">Marathi</option>
-                        <option value="Hindi">Hindi</option>
                         <option value="English">English</option>
                         <option value="Tamil">Tamil</option>
+                        <option value="Hindi">Hindi</option>
+                        <option value="Marathi">Marathi</option>
                         <option value="Bengali">Bengali</option>
+                        <option value="Kannada">Kannada</option>
+                        <option value="Telugu">Telugu</option>
                       </select>
                     </div>
 
                     <div>
                       <label className="block font-medium text-stone-300 mb-1">
-                        District / Jurisdiction
+                        District / Local Jurisdiction (Optional)
                       </label>
                       <input
                         type="text"
                         value={personalInfo.district}
                         onChange={(e) => setPersonalInfo({ ...personalInfo, district: e.target.value })}
+                        placeholder="e.g. Chennai, Coimbatore, Delhi, etc."
                         className="bw-input"
                       />
                     </div>
@@ -925,7 +1116,7 @@ export default function CitizenDashboard() {
                     {representationType === "legal-aid" && (
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-stone-300">
-                          Empaneled Advocates in {personalInfo.district}:
+                          Empaneled Advocates in {personalInfo.district || "Your Jurisdiction"}:
                         </label>
                         <select
                           value={selectedCounsel || ""}
