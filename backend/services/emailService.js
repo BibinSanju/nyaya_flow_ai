@@ -4,17 +4,92 @@ let cachedTransporter = null;
 
 class EmailService {
   /**
-   * Determine if production/real SMTP settings are configured in environment
+   * Determine if production/real email settings (HTTP API or SMTP) are configured
    */
   static isSmtpConfigured() {
     return Boolean(
-      process.env.SMTP_HOST &&
-      process.env.SMTP_HOST.trim() &&
-      process.env.SMTP_USER &&
-      process.env.SMTP_USER.trim() &&
-      process.env.SMTP_PASS &&
-      process.env.SMTP_PASS.trim()
+      (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim()) ||
+      (process.env.BREVO_API_KEY && process.env.BREVO_API_KEY.trim()) ||
+      (process.env.SMTP_HOST &&
+        process.env.SMTP_HOST.trim() &&
+        process.env.SMTP_USER &&
+        process.env.SMTP_USER.trim() &&
+        process.env.SMTP_PASS &&
+        process.env.SMTP_PASS.trim())
     );
+  }
+
+  /**
+   * Send email using Resend REST API (HTTPS Port 443).
+   * Render Free Tier blocks standard SMTP ports (25, 465, 587), but HTTPS (443) is never blocked.
+   */
+  static async sendViaResend({ to, subject, html, text }) {
+    const apiKey = process.env.RESEND_API_KEY.trim();
+    const fromAddress = process.env.EMAIL_FROM || "NyayaFlow Judiciary <onboarding@resend.dev>";
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [to],
+        subject,
+        html,
+        text,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Resend API error (${response.status}): ${data.message || JSON.stringify(data)}`);
+    }
+
+    return {
+      messageId: data.id,
+      accepted: [to],
+      response: "250 OK via Resend HTTPS (Port 443)",
+      isRealSmtp: true,
+      provider: "Resend",
+    };
+  }
+
+  /**
+   * Send email using Brevo REST API (HTTPS Port 443).
+   */
+  static async sendViaBrevo({ to, subject, html, text }) {
+    const apiKey = process.env.BREVO_API_KEY.trim();
+    const senderEmail = process.env.SMTP_USER || "noreply@nyayaflow.gov.in";
+
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "NyayaFlow Judicial Portal", email: senderEmail },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Brevo API error (${response.status}): ${data.message || JSON.stringify(data)}`);
+    }
+
+    return {
+      messageId: data.messageId,
+      accepted: [to],
+      response: "250 OK via Brevo HTTPS (Port 443)",
+      isRealSmtp: true,
+      provider: "Brevo",
+    };
   }
 
   /**
@@ -22,50 +97,30 @@ class EmailService {
    * Strictly enforces that unconfigured SMTP fails instead of silently simulating success.
    */
   static async getTransporter(customPort = null, customSecure = null) {
-    if (this.isSmtpConfigured()) {
-      const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
-      const port = customPort !== null ? customPort : parseInt(process.env.SMTP_PORT || "465", 10);
-      const secure = customSecure !== null ? customSecure : (process.env.SMTP_SECURE === "true" || port === 465);
+    const isRender = Boolean(process.env.RENDER);
+    const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+    const port = customPort !== null ? customPort : parseInt(process.env.SMTP_PORT || "465", 10);
+    const secure = customSecure !== null ? customSecure : (process.env.SMTP_SECURE === "true" || port === 465);
 
-      const pass = process.env.SMTP_PASS.trim();
-      // If it's a 16-letter App Password with spaces (e.g. 'xxxx xxxx xxxx xxxx'), strip whitespace
-      const cleanPass = pass.includes(" ") ? pass.replace(/\s+/g, "") : pass;
+    const pass = (process.env.SMTP_PASS || "").trim();
+    const cleanPass = pass.includes(" ") ? pass.replace(/\s+/g, "") : pass;
 
-      return nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: {
-          user: process.env.SMTP_USER.trim(),
-          pass: cleanPass,
-        },
-        family: 4, // Force IPv4 to eliminate Windows IPv6 network hanging
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 12000,
-        tls: {
-          rejectUnauthorized: process.env.NODE_ENV === "production",
-        },
-      });
-    }
-
-    // Explicit test mailer allowed ONLY if ALLOW_DEV_TEST_MAILER=true is set in testing scripts
-    if (process.env.ALLOW_DEV_TEST_MAILER === "true") {
-      const testAccount = await nodemailer.createTestAccount();
-      return nodemailer.createTransport({
-        host: "smtp.ethereal.email",
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    }
-
-    throw new Error(
-      "Real email delivery to Gmail requires SMTP_USER and a 16-character Google App Password (SMTP_PASS) configured in backend/.env. No SMTP credentials are configured. OTP could not be delivered to the recipient's Gmail inbox."
-    );
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: {
+        user: (process.env.SMTP_USER || "").trim(),
+        pass: cleanPass,
+      },
+      family: 4, // Force IPv4 to eliminate Windows IPv6 network hanging
+      connectionTimeout: isRender ? 4000 : 8000,
+      greetingTimeout: isRender ? 4000 : 8000,
+      socketTimeout: isRender ? 6000 : 12000,
+      tls: {
+        rejectUnauthorized: process.env.NODE_ENV === "production",
+      },
+    });
   }
 
   /**
@@ -83,14 +138,6 @@ class EmailService {
     if (!cleanTo || !emailRegex.test(cleanTo)) {
       throw new Error(`Invalid recipient email address format: "${to}". Please enter a valid email.`);
     }
-
-    const transporter = await this.getTransporter();
-
-    // For Gmail SMTP, sender address MUST match the authenticated SMTP_USER to avoid SPF/DKIM rejections
-    const smtpUser = process.env.SMTP_USER ? process.env.SMTP_USER.trim() : "";
-    const fromAddress = smtpUser
-      ? `"NyayaFlow Judicial Portal" <${smtpUser}>`
-      : (process.env.EMAIL_FROM || '"NyayaFlow Judicial Portal" <no-reply@nyayaflow.gov.in>');
 
     const roleNameMap = {
       citizen: "Citizen Litigant",
@@ -182,9 +229,43 @@ class EmailService {
       </td>
     </tr>
   </table>
-</body>
-</html>
-    `.trim();
+ </body>
+ </html>
+     `.trim();
+
+    // 1. Check if HTTP-based Email API is configured (Resend / Brevo)
+    // Cloud platforms like Render Free Tier block SMTP ports (25, 465, 587), but HTTPS (Port 443) works seamlessly!
+    if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim()) {
+      const resendResult = await this.sendViaResend({
+        to: cleanTo,
+        subject,
+        html: htmlContent,
+        text: textContent,
+      });
+      console.log(`[EmailService] OTP Email accepted by Resend HTTP API (Port 443)! MessageId: ${resendResult.messageId}`);
+      return resendResult;
+    }
+
+    if (process.env.BREVO_API_KEY && process.env.BREVO_API_KEY.trim()) {
+      const brevoResult = await this.sendViaBrevo({
+        to: cleanTo,
+        subject,
+        html: htmlContent,
+        text: textContent,
+      });
+      console.log(`[EmailService] OTP Email accepted by Brevo HTTP API (Port 443)! MessageId: ${brevoResult.messageId}`);
+      return brevoResult;
+    }
+
+    // 2. SMTP Delivery (Nodemailer)
+    const isRender = Boolean(process.env.RENDER);
+    const transporter = await this.getTransporter();
+
+    // For Gmail SMTP, sender address MUST match the authenticated SMTP_USER to avoid SPF/DKIM rejections
+    const smtpUser = process.env.SMTP_USER ? process.env.SMTP_USER.trim() : "";
+    const fromAddress = smtpUser
+      ? `"NyayaFlow Judicial Portal" <${smtpUser}>`
+      : (process.env.EMAIL_FROM || '"NyayaFlow Judicial Portal" <no-reply@nyayaflow.gov.in>');
 
     const mailOptions = {
       from: fromAddress,
@@ -217,9 +298,10 @@ class EmailService {
           );
         }
         if (rawMsg.includes("ECONNREFUSED") || rawMsg.includes("ETIMEDOUT") || rawMsg.includes("ENOTFOUND")) {
-          throw new Error(
-            `SMTP Connection Timeout on ${process.env.SMTP_HOST || "smtp.gmail.com"}. Local network/firewall blocked outbound SMTP connection.`
-          );
+          const timeoutDetails = isRender
+            ? "Render Free Tier blocks outbound SMTP ports 25, 465, and 587. To send real emails from Render, add RESEND_API_KEY in Render Environment Variables (uses HTTPS port 443)."
+            : `SMTP Connection Timeout on ${process.env.SMTP_HOST || "smtp.gmail.com"}. Local network/firewall blocked outbound SMTP connection.`;
+          throw new Error(`SMTP Connection Timeout: ${timeoutDetails}`);
         }
         throw new Error(`SMTP Mail delivery failed: ${rawMsg}`);
       }
