@@ -46,6 +46,14 @@ import DocumentUpload, { UploadedDocRecord } from "@/components/document-upload"
 import AppealAnalysisModal from "@/components/appeal-analysis-modal";
 import CourtSummonsModal from "@/components/court-summons-modal";
 import CnrTracker from "@/components/cnr-tracker";
+import {
+  INDIAN_STATES_AND_DISTRICTS,
+  COURT_AUTHORITY_OPTIONS,
+  getSuggestedNearbyCourts,
+  getStructuredStatutoryProvisions,
+  StatutoryProvision,
+  SuggestedCourt
+} from "@/data/jurisdictionData";
 
 const empaneledCounsel = [
   {
@@ -82,14 +90,15 @@ export default function CitizenDashboard() {
   const [wizardStep, setWizardStep] = useState(1);
 
   // Form State
-  // Form State
   const [personalInfo, setPersonalInfo] = useState({
     name: "",
     email: "",
     phone: "",
     phoneVerified: false,
-    district: "",
-    state: "",
+    district: "Pune",
+    state: "Maharashtra",
+    selectedCourtType: "dont_know",
+    customCourtName: "",
     language: "English",
     idProof: "",
   });
@@ -98,8 +107,10 @@ export default function CitizenDashboard() {
     name: "",
     email: "",
     phone: "",
-    district: "",
-    state: "",
+    district: "Pune",
+    state: "Maharashtra",
+    selectedCourtType: "dont_know",
+    customCourtName: "",
     language: "English",
     idProof: "",
   });
@@ -211,8 +222,10 @@ export default function CitizenDashboard() {
           email: emailVal,
           phone: phoneVal,
           phoneVerified: phoneVerified,
-          district: u.district || "",
-          state: u.state || "",
+          district: u.district || "Pune",
+          state: u.state || "Maharashtra",
+          selectedCourtType: u.selectedCourtType || "dont_know",
+          customCourtName: u.customCourtName || "",
           language: u.language || "English",
           idProof: idProofVal,
         };
@@ -224,8 +237,10 @@ export default function CitizenDashboard() {
           email: "",
           phone: "",
           phoneVerified: false,
-          district: "",
-          state: "",
+          district: "Pune",
+          state: "Maharashtra",
+          selectedCourtType: "dont_know",
+          customCourtName: "",
           language: "English",
           idProof: "",
         };
@@ -273,6 +288,8 @@ export default function CitizenDashboard() {
         phoneVerified: updatedProfile.phoneVerified,
         district: updatedProfile.district,
         state: updatedProfile.state,
+        selectedCourtType: updatedProfile.selectedCourtType,
+        customCourtName: updatedProfile.customCourtName,
         language: updatedProfile.language,
         idProof: updatedProfile.idProof,
       };
@@ -622,17 +639,27 @@ export default function CitizenDashboard() {
         ? privateAdvocate.name || "Private Counsel"
         : "In-Person (Self)";
 
+    const effectiveCourt =
+      personalInfo.selectedCourtType && personalInfo.selectedCourtType !== "dont_know"
+        ? personalInfo.selectedCourtType === "custom"
+          ? personalInfo.customCourtName || "Custom Specified Forum"
+          : COURT_AUTHORITY_OPTIONS.find((c) => c.id === personalInfo.selectedCourtType)?.name || "Subordinate Civil Court"
+        : getSuggestedNearbyCourts(
+            personalInfo.state || "Maharashtra",
+            personalInfo.district || "Pune",
+            classificationResult?.category
+          )[0]?.name || `Subordinate Civil Court, ${personalInfo.district || "Pune"}`;
+
     const newPetition = {
-      citizen_name: personalInfo.name || "Citizen Litigant",
-      contact: personalInfo.email || personalInfo.phone || "Not provided",
+      citizen_name:
+        personalInfo.name && personalInfo.name !== "Citizen Litigant"
+          ? personalInfo.name
+          : "Litigant",
+      contact: personalInfo.email || (personalInfo.phoneVerified ? personalInfo.phone : "") || "Not provided",
       category: classificationResult?.category || "Property & Land Dispute (Civil)",
       description: problemDescription,
       status: "Scrutiny Pending",
-      suggested_court:
-        classificationResult?.suggested_court ||
-        (personalInfo.district
-          ? `District & Subordinate Court, ${personalInfo.district}`
-          : "District & Subordinate Court"),
+      suggested_court: effectiveCourt,
       advocate_name: advocateName,
       language: personalInfo.language || "English",
       health_score: 92,
@@ -1149,37 +1176,140 @@ export default function CitizenDashboard() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <label className="block font-medium text-stone-300 mb-1">
-                        Preferred Language
-                      </label>
-                      <select
-                        value={personalInfo.language || "English"}
-                        onChange={(e) => setPersonalInfo({ ...personalInfo, language: e.target.value })}
-                        className="bw-input"
-                      >
-                        <option value="English">English</option>
-                        <option value="Tamil">Tamil</option>
-                        <option value="Hindi">Hindi</option>
-                        <option value="Marathi">Marathi</option>
-                        <option value="Bengali">Bengali</option>
-                        <option value="Kannada">Kannada</option>
-                        <option value="Telugu">Telugu</option>
-                      </select>
+                  {/* Structured Jurisdiction & Court Selection Process */}
+                  <div className="space-y-4 pt-3 border-t border-[#2d2621]">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-stone-200 flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-[#d4af37]" />
+                          <span>Jurisdiction & Court Selection Process</span>
+                        </h3>
+                        <p className="text-[11px] text-stone-400 mt-0.5">
+                          Specify territorial location and known authority, or enable AI nearby court discovery.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono text-[#d4af37] bg-[#221c17] border border-[#3d3228] px-2 py-0.5 rounded">
+                        Step 1 of 4: Territorial Scrutiny
+                      </span>
                     </div>
 
-                    <div>
-                      <label className="block font-medium text-stone-300 mb-1">
-                        District / Local Jurisdiction (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={personalInfo.district}
-                        onChange={(e) => setPersonalInfo({ ...personalInfo, district: e.target.value })}
-                        placeholder="e.g. Chennai, Coimbatore, Delhi, etc."
-                        className="bw-input"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      {/* 1. State or Union Territory */}
+                      <div>
+                        <label className="block font-medium text-stone-300 mb-1">
+                          1. State / Union Territory <span className="text-amber-500">*</span>
+                        </label>
+                        <select
+                          value={personalInfo.state || "Maharashtra"}
+                          onChange={(e) => {
+                            const newState = e.target.value;
+                            const availableDistricts = INDIAN_STATES_AND_DISTRICTS[newState] || [];
+                            const firstDist = availableDistricts[0] || "";
+                            setPersonalInfo({
+                              ...personalInfo,
+                              state: newState,
+                              district: firstDist,
+                            });
+                          }}
+                          className="bw-input cursor-pointer font-medium"
+                        >
+                          {Object.keys(INDIAN_STATES_AND_DISTRICTS).map((st) => (
+                            <option key={st} value={st}>
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. District */}
+                      <div>
+                        <label className="block font-medium text-stone-300 mb-1">
+                          2. District <span className="text-amber-500">*</span>
+                        </label>
+                        <select
+                          value={personalInfo.district || "Pune"}
+                          onChange={(e) => setPersonalInfo({ ...personalInfo, district: e.target.value })}
+                          className="bw-input cursor-pointer font-medium"
+                        >
+                          {(INDIAN_STATES_AND_DISTRICTS[personalInfo.state || "Maharashtra"] || ["Pune"]).map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Language */}
+                      <div>
+                        <label className="block font-medium text-stone-300 mb-1">
+                          Preferred Language
+                        </label>
+                        <select
+                          value={personalInfo.language || "English"}
+                          onChange={(e) => setPersonalInfo({ ...personalInfo, language: e.target.value })}
+                          className="bw-input cursor-pointer"
+                        >
+                          <option value="English">English</option>
+                          <option value="Marathi">Marathi</option>
+                          <option value="Hindi">Hindi</option>
+                          <option value="Tamil">Tamil</option>
+                          <option value="Kannada">Kannada</option>
+                          <option value="Telugu">Telugu</option>
+                          <option value="Bengali">Bengali</option>
+                          <option value="Gujarati">Gujarati</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 3. Relevant court or authority, if known */}
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <label className="block font-medium text-stone-300">
+                          3. Relevant Court or Authority, if known
+                        </label>
+                        <span className="text-[10px] text-stone-400">
+                          Select &quot;Suggest nearby&quot; if uncertain
+                        </span>
+                      </div>
+
+                      <select
+                        value={personalInfo.selectedCourtType || "dont_know"}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, selectedCourtType: e.target.value })}
+                        className="bw-input cursor-pointer font-medium"
+                      >
+                        {COURT_AUTHORITY_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {personalInfo.selectedCourtType === "custom" && (
+                        <div className="pt-2 animate-in fade-in duration-150">
+                          <input
+                            type="text"
+                            value={personalInfo.customCourtName || ""}
+                            onChange={(e) => setPersonalInfo({ ...personalInfo, customCourtName: e.target.value })}
+                            placeholder="Enter specific name of court, departmental tribunal, or authority"
+                            className="bw-input text-xs"
+                          />
+                        </div>
+                      )}
+
+                      {/* 4. If don't know: Notice about nearby court suggestion */}
+                      {(!personalInfo.selectedCourtType || personalInfo.selectedCourtType === "dont_know") && (
+                        <div className="p-2.5 rounded-lg border border-[#3e352f] bg-[#1a1613] text-[11px] text-stone-300 flex items-start gap-2.5 mt-2">
+                          <Building className="w-4 h-4 text-[#d4af37] shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <p className="font-semibold text-[#e2c481]">
+                              4. Automated Nearby Court Recommendation Active:
+                            </p>
+                            <p className="text-stone-300 leading-relaxed">
+                              Since you are not sure of the exact court, NyayaFlow will evaluate your dispute narrative against jurisdiction rules in <strong>{personalInfo.district || "Pune"}, {personalInfo.state || "Maharashtra"}</strong> and identify candidate forums nearby (e.g. Subordinate Civil Court, SDM Revenue Office, or District Sessions Bench).
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1217,12 +1347,16 @@ export default function CitizenDashboard() {
                     </p>
                   </div>
 
-                  <div className="p-4 rounded-lg border border-[#2d2621] bg-[#14110f] space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-stone-200">
-                        Category: {classificationResult.category}
-                      </span>
-                      <span className="text-[11px] font-mono border border-[#3e352f] bg-[#201b17] text-stone-300 px-2 py-0.5 rounded">
+                  {/* Case Category & Potential Forum Guidance */}
+                  <div className="p-5 rounded-xl border border-[#332a24] bg-[#161311] space-y-4 shadow-lg">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2d2520] pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">Classified Category:</span>
+                        <span className="text-xs font-bold text-amber-300 bg-amber-950/60 border border-amber-800/70 px-2.5 py-0.5 rounded">
+                          {classificationResult.category}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono border border-[#3e352f] bg-[#201b17] text-stone-300 px-2.5 py-0.5 rounded">
                         Confidence: {classificationResult.confidence}
                       </span>
                     </div>
@@ -1231,29 +1365,179 @@ export default function CitizenDashboard() {
                       {classificationResult.simple_explanation || classificationResult.simpleExplanation}
                     </p>
 
-                    <div className="pt-2 flex flex-wrap gap-4 text-xs text-stone-400">
-                      <div>
-                        <strong className="text-stone-300">Forum:</strong> {classificationResult.suggested_court || classificationResult.suggestedCourt}
+                    {/* Exact User Specification for Forum Display */}
+                    <div className="pt-2 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-stone-200">Potential forum:</span>
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-700/80 font-mono">
+                            Requires verification
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-stone-400">
+                          Selected Jurisdiction: <strong>{personalInfo.district || "Pune"}, {personalInfo.state || "Maharashtra"}</strong>
+                        </span>
                       </div>
-                      <div>
-                        <strong className="text-stone-300">Timeline:</strong> {classificationResult.timeline}
+
+                      <p className="text-xs text-stone-300 leading-relaxed">
+                        The forum depends on the facts and the applicable law. Some disputes concern civil rights, while others may involve specific administrative or statutory remedies.
+                      </p>
+
+                      {/* Display User-Selected Authority or Nearby Suggested Courts */}
+                      {personalInfo.selectedCourtType && personalInfo.selectedCourtType !== "dont_know" ? (
+                        <div className="p-3 rounded-lg bg-[#1e1915] border border-[#3b3129] text-xs space-y-1">
+                          <p className="text-stone-300">
+                            <strong className="text-stone-100">User-Specified Authority:</strong>{" "}
+                            {personalInfo.selectedCourtType === "custom"
+                              ? personalInfo.customCourtName || "Custom Specified Forum"
+                              : COURT_AUTHORITY_OPTIONS.find((c) => c.id === personalInfo.selectedCourtType)?.name}
+                          </p>
+                          <p className="text-[11px] text-stone-400">
+                            Filing before this forum is subject to territorial, pecuniary, and statutory subject-matter jurisdiction scrutiny.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-lg bg-[#1c1815] border border-[#3b3129] text-xs space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-[#e2c481] flex items-center gap-1.5">
+                              <Building className="w-3.5 h-3.5 text-[#d4af37]" />
+                              <span>Candidate Nearby Courts & Forums ({personalInfo.district || "Pune"}):</span>
+                            </span>
+                            <span className="text-[10px] text-stone-400 font-sans">Closest Proximity</span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {getSuggestedNearbyCourts(
+                              personalInfo.state || "Maharashtra",
+                              personalInfo.district || "Pune",
+                              classificationResult.category
+                            ).map((c, i) => (
+                              <div
+                                key={i}
+                                className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-[#13110f] border border-[#2e2621] gap-1.5"
+                              >
+                                <div>
+                                  <p className="font-semibold text-stone-200 text-xs">{c.name}</p>
+                                  <p className="text-[11px] text-stone-400 mt-0.5">{c.jurisdiction}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded">
+                                    {c.distance}
+                                  </span>
+                                  <span className="text-[10px] text-stone-400 bg-[#221c18] border border-[#38302a] px-1.5 py-0.5 rounded">
+                                    {c.forumType}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Next Step & Legal Retrieval Guidance */}
+                      <div className="p-3.5 rounded-lg bg-[#181412] border border-[#332c26] space-y-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-stone-200 font-semibold">
+                          <ArrowRight className="w-3.5 h-3.5 text-[#d4af37]" />
+                          <span>Next step:</span>
+                        </div>
+                        <p className="text-stone-300 leading-relaxed pl-5">
+                          Review the type of property dispute, location, applicable law, and requested remedy to identify the appropriate authority.
+                        </p>
+                        <p className="text-stone-400 text-[11px] leading-relaxed pl-5 italic border-t border-[#29221d] pt-1.5 mt-1">
+                          Once your legal retrieval system supports the recommendation with verified sources, it can explain the potential forum and why it may apply.
+                        </p>
+                      </div>
+
+                      <div className="text-[11px] text-stone-400 flex items-center justify-between pt-1">
+                        <span>
+                          <strong className="text-stone-300">Estimated Hearing Timeline:</strong>{" "}
+                          {classificationResult.timeline || "6 - 12 Months (Subject to court listing)"}
+                        </span>
+                        <span className="text-[10px] text-stone-500 font-mono">eCourts CMM-CIS Compliant</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Applicable Statutes */}
-                  <div className="space-y-2">
-                    <h3 className="text-xs font-semibold text-stone-300 uppercase tracking-wider">
-                      Applicable Statutory Sections
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {classificationResult.acts?.map((act: string, idx: number) => (
-                        <span
+                  {/* Applicable Statutory Sections - Structured 6-Field Cards */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-[#2d2621] pb-2">
+                      <div>
+                        <h3 className="text-xs font-semibold text-stone-200 uppercase tracking-wider flex items-center gap-2">
+                          <Scale className="w-3.5 h-3.5 text-[#d4af37]" />
+                          <span>Applicable Statutory Sections</span>
+                        </h3>
+                        <p className="text-[11px] text-stone-400 mt-0.5">
+                          Verified legal provisions, rules, plain-language explanations, and official statute links
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono text-[#d4af37] bg-[#201b17] border border-[#38302a] px-2.5 py-0.5 rounded">
+                        Statutory Provisions
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {getStructuredStatutoryProvisions(
+                        classificationResult.category,
+                        problemDescription
+                      ).map((item: StatutoryProvision, idx: number) => (
+                        <div
                           key={idx}
-                          className="px-2.5 py-1 rounded bg-[#201b17] border border-[#38302a] text-xs font-mono text-stone-300"
+                          className="p-4 rounded-xl border border-[#332a24] bg-[#161311] hover:border-[#4d4036] transition-all space-y-3 shadow-md"
                         >
-                          {act}
-                        </span>
+                          {/* 1. Name of the Law & 2. Section or Rule */}
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-bold text-white tracking-wide">
+                                1. {item.law_name}
+                              </span>
+                              <span className="text-[11px] font-mono font-semibold text-[#d4af37] bg-[#27201b] border border-[#44382f] px-2 py-0.5 rounded">
+                                2. {item.section_rule}
+                              </span>
+                            </div>
+
+                            {/* 5. Official Source Link */}
+                            {item.official_source_url && (
+                              <a
+                                href={item.official_source_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-950/50 border border-emerald-800/60 px-2.5 py-1 rounded transition-colors group cursor-pointer"
+                                title="Open authentic government text on India Code repository"
+                              >
+                                <span>5. Official Source (India Code)</span>
+                                <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* 3. Plain-Language Explanation */}
+                          <div className="text-xs space-y-1 bg-[#1a1714] p-3 rounded-lg border border-[#2a231e]">
+                            <span className="text-[10px] font-semibold uppercase text-stone-400 tracking-wider block">
+                              3. Plain-Language Explanation:
+                            </span>
+                            <p className="text-stone-300 leading-relaxed">
+                              {item.plain_explanation}
+                            </p>
+                          </div>
+
+                          {/* 4. Why the provision might be relevant */}
+                          <div className="text-xs space-y-1">
+                            <span className="text-[10px] font-semibold uppercase text-amber-400/90 tracking-wider block">
+                              4. Why the provision might be relevant:
+                            </span>
+                            <p className="text-stone-300 leading-relaxed text-xs">
+                              {item.relevance}
+                            </p>
+                          </div>
+
+                          {/* 6. Disclaimer that applicability requires verification */}
+                          <div className="p-2.5 rounded-lg bg-[#1e1713]/80 border border-amber-900/50 text-[11px] text-amber-300/90 flex items-start gap-2">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <p className="leading-relaxed">
+                              <strong>6. Disclaimer:</strong> {item.disclaimer}
+                            </p>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>

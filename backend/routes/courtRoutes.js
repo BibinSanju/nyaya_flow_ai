@@ -520,6 +520,13 @@ router.post("/case/classify", optionalAuth, async (req, res) => {
     category,
     confidence: "96.2%",
     suggested_court: suggestedCourt,
+    forum_status: "Requires verification",
+    forum_guidance:
+      "The forum depends on the facts and the applicable law. Some disputes concern civil rights, while others may involve specific administrative or statutory remedies.",
+    next_step:
+      "Review the type of property dispute, location, applicable law, and requested remedy to identify the appropriate authority.",
+    retrieval_disclaimer:
+      "Once your legal retrieval system supports the recommendation with verified sources, it can explain the potential forum and why it may apply.",
     acts,
     required_documents: docs,
     timeline: "6 - 12 Months (Subject to court listing)",
