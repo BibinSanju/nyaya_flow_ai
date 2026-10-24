@@ -313,6 +313,12 @@ export async function apiSummarizeCase(petitionText: string, hearingsSummary?: s
 // Groq Whisper Speech-to-Text (STT) Audio Transcription API
 // -------------------------------------------------------------
 
+const STT_LANG_MAP: Record<string, string> = {
+  English: "en", Marathi: "mr", Hindi: "hi", Tamil: "ta",
+  Telugu: "te", Kannada: "kn", Bengali: "bn", Gujarati: "gu",
+  Punjabi: "pa", Urdu: "ur", Malayalam: "ml",
+};
+
 export async function apiTranscribeAudio(
   audioBlob: Blob,
   language = "auto"
@@ -322,14 +328,16 @@ export async function apiTranscribeAudio(
   else if (audioBlob.type.includes("wav")) filename = "dictation.wav";
   else if (audioBlob.type.includes("ogg")) filename = "dictation.ogg";
 
+  const targetLang = STT_LANG_MAP[language] || language;
+
   const formData = new FormData();
   formData.append("audio", audioBlob, filename);
-  if (language && language !== "auto") {
-    formData.append("language", language);
+  if (targetLang && targetLang !== "auto") {
+    formData.append("language", targetLang);
   }
 
   const cleanEndpoint = "/api/stt/transcribe";
-  const url = cleanEndpoint.startsWith("http")
+  const primaryUrl = cleanEndpoint.startsWith("http")
     ? cleanEndpoint
     : API_BASE_URL
     ? `${API_BASE_URL}${cleanEndpoint}`
@@ -341,11 +349,26 @@ export async function apiTranscribeAudio(
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(primaryUrl, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+  } catch (netErr) {
+    // If backend connection fails and primaryUrl was absolute, retry against Next.js local API proxy
+    if (primaryUrl !== cleanEndpoint) {
+      console.warn("[STT] Backend direct fetch failed, retrying via Next.js local proxy:", netErr);
+      res = await fetch(cleanEndpoint, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+    } else {
+      throw netErr;
+    }
+  }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

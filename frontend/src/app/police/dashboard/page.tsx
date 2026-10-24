@@ -48,6 +48,7 @@ export default function PolicePortal() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState<string>("");
   const [sttFeedback, setSttFeedback] = useState<string | null>(null);
   const [sttError, setSttError] = useState<string | null>(null);
 
@@ -55,6 +56,8 @@ export default function PolicePortal() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const liveTranscriptRef = useRef<string>("");
 
   useEffect(() => {
     return () => {
@@ -80,6 +83,11 @@ export default function PolicePortal() {
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       try {
@@ -128,6 +136,8 @@ export default function PolicePortal() {
       const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      liveTranscriptRef.current = "";
+      setLiveTranscript("");
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -145,7 +155,9 @@ export default function PolicePortal() {
         const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
         audioChunksRef.current = [];
 
-        if (audioBlob.size < 500) {
+        const liveCaptured = liveTranscriptRef.current?.trim();
+
+        if (audioBlob.size < 500 && !liveCaptured) {
           setSttFeedback("Recording too brief. Please speak clearly into your microphone.");
           setIsTranscribing(false);
           return;
@@ -161,18 +173,58 @@ export default function PolicePortal() {
             setIncidentText((prev) => (prev.trim() ? `${prev.trim()}\n\n${transcribed}` : transcribed));
             setSttFeedback(`✓ Transcribed ${res.duration ? `${Math.round(res.duration)}s ` : ""}statement (${res.language || 'detected'})`);
             setTimeout(() => setSttFeedback(null), 6000);
+          } else if (liveCaptured) {
+            setIncidentText((prev) => (prev.trim() ? `${prev.trim()}\n\n${liveCaptured}` : liveCaptured));
+            setSttFeedback("✓ Captured statement via Speech Engine");
+            setTimeout(() => setSttFeedback(null), 6000);
           } else {
             setSttFeedback("No audible speech detected. Please check microphone volume and try again.");
           }
         } catch (transcribeErr: any) {
-          console.error("Groq STT transcription error:", transcribeErr);
-          setSttError(
-            transcribeErr?.message || "Could not transcribe audio statement."
-          );
+          console.warn("Groq STT transcription warning:", transcribeErr);
+          if (liveCaptured) {
+            setIncidentText((prev) => (prev.trim() ? `${prev.trim()}\n\n${liveCaptured}` : liveCaptured));
+            setSttFeedback("✓ Recorded statement via Speech Engine");
+            setTimeout(() => setSttFeedback(null), 6000);
+          } else {
+            setSttError(
+              transcribeErr?.message || "Could not transcribe audio statement."
+            );
+          }
         } finally {
           setIsTranscribing(false);
+          setLiveTranscript("");
+          liveTranscriptRef.current = "";
         }
       };
+
+      // Start in-browser Web Speech API for real-time live captions & fallback
+      if (typeof window !== "undefined") {
+        const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRec) {
+          try {
+            const rec = new SpeechRec();
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = "en-IN";
+            rec.onresult = (evt: any) => {
+              let currentText = "";
+              for (let i = 0; i < evt.results.length; ++i) {
+                currentText += evt.results[i][0].transcript;
+              }
+              if (currentText) {
+                setLiveTranscript(currentText);
+                liveTranscriptRef.current = currentText;
+              }
+            };
+            rec.onerror = () => {};
+            rec.start();
+            recognitionRef.current = rec;
+          } catch (recErr) {
+            console.warn("Live speech recognition initialization:", recErr);
+          }
+        }
+      }
 
       mediaRecorder.start(250);
       setIsRecording(true);
@@ -530,13 +582,21 @@ export default function PolicePortal() {
 
               {/* Active Recording Notice */}
               {isRecording && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-950/30 border border-rose-500/40 rounded text-xs text-rose-300">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                  </span>
-                  <span>Listening... Dictate complainant or officer oral statement. Click <strong>Stop ({formatSeconds(recordingSeconds)})</strong> when done.</span>
-                  <span className="ml-auto font-mono text-[11px] text-rose-400">Max 60s</span>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-950/30 border border-rose-500/40 rounded text-xs text-rose-300">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                    </span>
+                    <span>Listening... Dictate complainant or officer oral statement. Click <strong>Stop ({formatSeconds(recordingSeconds)})</strong> when done.</span>
+                    <span className="ml-auto font-mono text-[11px] text-rose-400">Max 60s</span>
+                  </div>
+                  {liveTranscript && (
+                    <div className="px-3 py-1.5 bg-[#1b1714] border border-amber-500/30 rounded text-xs text-stone-200">
+                      <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 block mb-0.5">Live Captions:</span>
+                      <p className="italic text-stone-300 font-serif">"{liveTranscript}"</p>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -13,6 +13,12 @@ import {
   RotateCcw,
   Zap,
   ChevronDown,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Square,
+  Loader2,
 } from "lucide-react";
 
 interface Message {
@@ -31,7 +37,14 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
   const [inputVal, setInputVal] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -182,10 +195,189 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
   }, [currentRole]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    return () => {
+      stopSpeaking();
+      stopListening();
+    };
+  }, []);
+
+  const cleanSpeechText = (raw: string) => {
+    return raw
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/#+\s/g, "")
+      .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+      .replace(/[-*•]\s/g, " ")
+      .trim();
+  };
+
+  const stopSpeaking = () => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
     }
-  }, [messages, isTyping]);
+    setSpeakingMsgId(null);
+  };
+
+  const speakText = (text: string, msgId: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setVoiceNotice("Speech synthesis not supported in this browser.");
+      setTimeout(() => setVoiceNotice(null), 3000);
+      return;
+    }
+
+    if (speakingMsgId === msgId) {
+      stopSpeaking();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const cleaned = cleanSpeechText(text);
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(
+      (v) =>
+        v.lang.includes("en-IN") ||
+        v.name.toLowerCase().includes("india") ||
+        v.lang.includes("hi-IN") ||
+        v.lang.startsWith("en")
+    );
+    if (preferredVoice) utterance.voice = preferredVoice;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => setSpeakingMsgId(msgId);
+    utterance.onend = () => setSpeakingMsgId(null);
+    utterance.onerror = () => setSpeakingMsgId(null);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setIsVoiceListening(false);
+  };
+
+  const toggleListening = async () => {
+    if (isVoiceListening) {
+      stopListening();
+      return;
+    }
+
+    setVoiceNotice(null);
+
+    // 1. In-browser SpeechRecognition
+    const SpeechRec =
+      typeof window !== "undefined"
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
+
+    if (SpeechRec) {
+      try {
+        const rec = new SpeechRec();
+        rec.continuous = false;
+        rec.interimResults = true;
+        rec.lang = "en-IN";
+
+        rec.onstart = () => {
+          setIsVoiceListening(true);
+        };
+
+        rec.onresult = (evt: any) => {
+          let transcript = "";
+          for (let i = 0; i < evt.results.length; ++i) {
+            transcript += evt.results[i][0].transcript;
+          }
+          if (transcript) {
+            setInputVal(transcript);
+          }
+        };
+
+        rec.onend = () => {
+          setIsVoiceListening(false);
+        };
+
+        rec.onerror = (err: any) => {
+          console.warn("Speech recognition notice:", err);
+          setIsVoiceListening(false);
+          if (err.error === "not-allowed") {
+            setVoiceNotice("Microphone permission denied.");
+            setTimeout(() => setVoiceNotice(null), 3500);
+          }
+        };
+
+        rec.start();
+        recognitionRef.current = rec;
+        return;
+      } catch (e) {
+        console.warn("Speech recognition init error:", e);
+      }
+    }
+
+    // 2. Fallback to MediaRecorder + Whisper API
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        setVoiceNotice("Microphone not supported in this browser.");
+        setTimeout(() => setVoiceNotice(null), 3500);
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        if (blob.size < 500) return;
+
+        setVoiceNotice("Transcribing speech with Whisper...");
+        try {
+          const formData = new FormData();
+          formData.append("audio", blob, "voice_inquiry.webm");
+          formData.append("language", "en");
+
+          const res = await fetch("/api/stt/transcribe", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          if (data?.text) {
+            setInputVal(data.text);
+            setVoiceNotice(null);
+          }
+        } catch {
+          setVoiceNotice("Could not transcribe speech.");
+          setTimeout(() => setVoiceNotice(null), 3000);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsVoiceListening(true);
+    } catch (err: any) {
+      console.warn("Mic access error:", err);
+      setIsVoiceListening(false);
+      setVoiceNotice("Microphone permission was denied.");
+      setTimeout(() => setVoiceNotice(null), 3500);
+    }
+  };
 
   const handleSend = async (textToSend: string) => {
     const trimmed = textToSend.trim();
@@ -252,6 +444,9 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
       };
 
       setMessages((prev) => [...prev, aiReply]);
+      if (autoSpeak) {
+        speakText(replyContent, aiReply.id);
+      }
     } catch (err) {
       console.warn("Chat request failed, using instant legal knowledge fallback:", err);
       const roleAnswers = answersByRole[currentRole] || answersByRole.citizen;
@@ -268,6 +463,9 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
       };
 
       setMessages((prev) => [...prev, aiReply]);
+      if (autoSpeak) {
+        speakText(fallbackText, aiReply.id);
+      }
     } finally {
       setIsTyping(false);
     }
@@ -372,6 +570,24 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
               </div>
 
               <div className="flex items-center gap-1">
+                {/* Voice Mode Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !autoSpeak;
+                    setAutoSpeak(next);
+                    if (!next) stopSpeaking();
+                  }}
+                  title={autoSpeak ? "Voice Mode ON: Auto-speaks responses" : "Voice Mode OFF: Click to auto-speak responses"}
+                  aria-label="Toggle Voice Mode"
+                  className={`p-1.5 rounded transition-colors ${
+                    autoSpeak
+                      ? "text-amber-400 bg-amber-500/10 border border-amber-500/30"
+                      : "text-stone-400 hover:text-stone-200 hover:bg-[#201b17]"
+                  }`}
+                >
+                  {autoSpeak ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                </button>
                 <button
                   onClick={resetChat}
                   title="Reset conversation"
@@ -381,7 +597,11 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    stopSpeaking();
+                    stopListening();
+                    setIsOpen(false);
+                  }}
                   aria-label="Close assistant"
                   className="p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-[#201b17] transition-colors"
                 >
@@ -417,13 +637,32 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
                   >
                     <div>{formatText(msg.text)}</div>
                     <div className="flex items-center justify-between gap-2 mt-1.5 pt-1 border-t border-[#2d2621] text-[9px] text-stone-400">
-                      {msg.model ? (
-                        <span className="font-mono text-stone-400">
-                          {msg.model}
-                        </span>
-                      ) : (
-                        <span />
-                      )}
+                      <div className="flex items-center gap-2">
+                        {msg.model && (
+                          <span className="font-mono text-stone-400">{msg.model}</span>
+                        )}
+                        {msg.sender === "ai" && (
+                          <button
+                            type="button"
+                            onClick={() => speakText(msg.text, msg.id)}
+                            title={speakingMsgId === msg.id ? "Stop voice" : "Read answer aloud"}
+                            className={`inline-flex items-center gap-1 px-1 py-0.5 rounded transition-colors ${
+                              speakingMsgId === msg.id
+                                ? "text-amber-400 bg-amber-500/10 font-semibold"
+                                : "text-stone-400 hover:text-stone-200"
+                            }`}
+                          >
+                            {speakingMsgId === msg.id ? (
+                              <>
+                                <Square className="w-2.5 h-2.5 fill-current" />
+                                <span>Speaking...</span>
+                              </>
+                            ) : (
+                              <Volume2 className="w-2.5 h-2.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                       <span>{msg.timestamp}</span>
                     </div>
                   </div>
@@ -467,24 +706,77 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
               </div>
             )}
 
+            {/* Voice Notice Toast */}
+            {voiceNotice && (
+              <div className="px-3 py-1 bg-amber-950/40 border-t border-amber-500/30 text-[11px] text-amber-300 flex items-center justify-between">
+                <span>{voiceNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setVoiceNotice(null)}
+                  className="text-stone-400 hover:text-stone-200 ml-2"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Listening Indicator Banner */}
+            {isVoiceListening && (
+              <div className="px-3 py-1.5 bg-rose-950/40 border-t border-rose-500/40 text-[11px] text-rose-300 flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <span className="font-medium">Voice Agent Listening... Speak your inquiry</span>
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  className="ml-auto text-[10px] text-rose-400 font-mono underline hover:text-rose-200"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+
             {/* Input Bar */}
-            <div className="p-2.5 bg-[#181513] border-t border-[#2d2621] flex gap-2 shrink-0">
+            <div className="p-2.5 bg-[#181513] border-t border-[#2d2621] flex gap-2 shrink-0 items-center">
               <input
                 type="text"
-                placeholder={`Ask court assistant (${currentRole})...`}
+                placeholder={isVoiceListening ? "Listening..." : `Ask court assistant (${currentRole})...`}
                 value={inputVal}
                 disabled={isTyping}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
+                    if (isVoiceListening) stopListening();
                     handleSend(inputVal);
                   }
                 }}
                 className="flex-1 bg-[#100e0c] border border-[#332c28] focus:border-stone-400 rounded-lg px-3 py-2 text-xs text-stone-100 placeholder:text-stone-500 focus:outline-none transition-colors disabled:opacity-50"
               />
+
+              {/* Microphone Voice Agent Button */}
               <button
-                onClick={() => handleSend(inputVal)}
+                type="button"
+                onClick={toggleListening}
+                title={isVoiceListening ? "Stop voice listening" : "Speak to Voice Agent"}
+                aria-label="Voice Agent Speech Input"
+                className={`p-2 rounded-lg border transition-all flex items-center justify-center cursor-pointer shrink-0 ${
+                  isVoiceListening
+                    ? "bg-rose-950/80 text-rose-300 border-rose-500/70 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse"
+                    : "bg-[#201b17] text-stone-400 hover:text-amber-400 hover:border-[#443a33] border-[#332c28]"
+                }`}
+              >
+                {isVoiceListening ? <Mic className="w-3.5 h-3.5 text-rose-400" /> : <Mic className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* Send Button */}
+              <button
+                onClick={() => {
+                  if (isVoiceListening) stopListening();
+                  handleSend(inputVal);
+                }}
                 disabled={!inputVal.trim() || isTyping}
                 aria-label="Send query"
                 className="px-3 py-2 rounded-lg bg-[#26201c] hover:bg-[#302823] text-stone-200 border border-[#3e352f] flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all self-center shrink-0"
