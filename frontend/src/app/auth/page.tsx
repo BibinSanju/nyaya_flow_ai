@@ -35,55 +35,62 @@ interface RoleConfig {
 export default function AuthPage() {
   const router = useRouter();
 
-  const roles: RoleConfig[] = [
+  const publicRoles: RoleConfig[] = [
     {
       id: "citizen",
-      name: "Citizen Litigant",
-      desc: "File and track petitions, upload documents",
+      name: "Citizen",
+      desc: "File and track petitions, upload documents, and seek legal aid",
       icon: User,
       dashboardPath: "/citizen/dashboard",
     },
     {
       id: "advocate",
-      name: "Advocate Counsel",
-      desc: "Manage vakalatnama briefs and client representation",
+      name: "Advocate",
+      desc: "Manage vakalatnama briefs, client representation, and court filings",
       icon: Briefcase,
       dashboardPath: "/advocate/dashboard",
     },
+  ];
+
+  const institutionalRoles: RoleConfig[] = [
     {
       id: "police",
       name: "Police Officer",
-      desc: "Register FIR narratives and forensic hashes",
+      desc: "Register FIR narratives, chargesheets, and forensic hashes",
       icon: Shield,
       dashboardPath: "/police/dashboard",
     },
     {
       id: "registrar",
       name: "Court Registrar",
-      desc: "Audit case filings and issue official CNR numbers",
+      desc: "Audit case filings, scrutinize defects, and issue official CNR numbers",
       icon: Building2,
       dashboardPath: "/registrar/dashboard",
     },
     {
       id: "judge",
       name: "Presiding Judge",
-      desc: "Review cause lists and sign judicial bench orders",
+      desc: "Review cause lists, inspect case briefs, and sign judicial bench orders",
       icon: UserCheck,
       dashboardPath: "/judge/dashboard",
     },
     {
       id: "admin",
       name: "System Administrator",
-      desc: "Review platform audit logs and system telemetry",
+      desc: "Review platform audit logs, security telemetry, and access policies",
       icon: Lock,
       dashboardPath: "/admin/dashboard",
     },
   ];
 
+  const allRoles = [...publicRoles, ...institutionalRoles];
+
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [selectedRole, setSelectedRole] = useState<RoleConfig>(roles[0]);
+  const [selectedRole, setSelectedRole] = useState<RoleConfig>(publicRoles[0]);
   const [contact, setContact] = useState("");
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [aadhaar, setAadhaar] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -190,10 +197,45 @@ export default function AuthPage() {
     setSuccessMessage(null);
 
     try {
-      const nameToSend = authMode === "register" ? fullName.trim() : (fullName.trim() || selectedRole.name);
+      const nameToSend = fullName.trim() || undefined;
       const res = await apiVerifyOTP(contact, otp.trim(), selectedRole.id, nameToSend);
 
       if (res.success) {
+        if (typeof window !== "undefined") {
+          let stored: any = {};
+          try {
+            stored = JSON.parse(localStorage.getItem("nyayaflow_user") || "{}");
+          } catch (e) {}
+
+          const rawAadhaar = aadhaar.replace(/\D/g, "");
+          const maskedAadhaar =
+            rawAadhaar.length >= 4
+              ? `•••• •••• ${rawAadhaar.slice(-4)}`
+              : stored.idProof;
+
+          localStorage.setItem(
+            "nyayaflow_user",
+            JSON.stringify({
+              ...stored,
+              fullName:
+                nameToSend ||
+                (res.user?.fullName &&
+                !["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"].includes(res.user.fullName)
+                  ? res.user.fullName
+                  : stored.fullName &&
+                    !["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"].includes(stored.fullName)
+                  ? stored.fullName
+                  : stored.name &&
+                    !["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"].includes(stored.name)
+                  ? stored.name
+                  : (contact.includes("@") ? contact.split("@")[0] : "Litigant")),
+              email: contact.includes("@") ? contact.trim() : stored.email,
+              phone: phone.trim() ? phone.trim() : stored.phone,
+              idProof: maskedAadhaar || stored.idProof,
+            })
+          );
+        }
+
         setSuccessMessage(
           authMode === "login"
             ? "Log In verified successfully. Redirecting to workspace..."
@@ -229,10 +271,45 @@ export default function AuthPage() {
     setSuccessMessage(null);
 
     try {
-      const userName = fullName.trim() || (selectedRole.id === "citizen" ? "Citizen Litigant" : `Verified ${selectedRole.name}`);
-      const res = await apiAuthLogin(contact.trim(), userName, selectedRole.id);
+      const userName = fullName.trim() || undefined;
+      const res = await apiAuthLogin(contact.trim(), userName, selectedRole.id, phone.trim() || undefined);
 
       if (res.token) {
+        if (typeof window !== "undefined") {
+          let stored: any = {};
+          try {
+            stored = JSON.parse(localStorage.getItem("nyayaflow_user") || "{}");
+          } catch (e) {}
+
+          const rawAadhaar = aadhaar.replace(/\D/g, "");
+          const maskedAadhaar =
+            rawAadhaar.length >= 4
+              ? `•••• •••• ${rawAadhaar.slice(-4)}`
+              : stored.idProof;
+
+          localStorage.setItem(
+            "nyayaflow_user",
+            JSON.stringify({
+              ...stored,
+              fullName:
+                userName ||
+                (res.full_name &&
+                !["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"].includes(res.full_name)
+                  ? res.full_name
+                  : stored.fullName &&
+                    !["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"].includes(stored.fullName)
+                  ? stored.fullName
+                  : stored.name &&
+                    !["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"].includes(stored.name)
+                  ? stored.name
+                  : (contact.includes("@") ? contact.split("@")[0] : "Litigant")),
+              email: contact.trim(),
+              phone: phone.trim() ? phone.trim() : stored.phone,
+              idProof: maskedAadhaar || stored.idProof,
+            })
+          );
+        }
+
         setSuccessMessage(`Logged in successfully as ${selectedRole.name}. Redirecting...`);
         setTimeout(() => {
           router.push(selectedRole.dashboardPath);
@@ -346,31 +423,77 @@ export default function AuthPage() {
             </p>
           </div>
 
-          {/* Role Selector Grid */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-stone-300 uppercase tracking-wider">Designated Role</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {roles.map((role) => {
-                const Icon = role.icon;
-                const isSelected = selectedRole.id === role.id;
-                return (
-                  <button
-                    key={role.id}
-                    type="button"
-                    onClick={() => handleSelectRole(role)}
-                    className={`p-3 rounded-lg border text-left transition-all flex flex-col justify-between cursor-pointer ${
-                      isSelected
-                        ? "border-[#6e5f54] bg-[#26201c] text-stone-100 font-semibold ring-1 ring-[#6e5f54]/50"
-                        : "border-[#2d2621] hover:border-[#443a33] bg-[#14110f] text-stone-400 hover:text-stone-200"
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 mb-2 ${isSelected ? "text-stone-200" : "text-stone-500"}`} />
-                    <div>
-                      <p className="text-xs leading-tight">{role.name}</p>
-                    </div>
-                  </button>
-                );
-              })}
+          {/* Role Selector Groups */}
+          <div className="space-y-3">
+            {/* 1. Public Access */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                  Public Access
+                </span>
+                <span className="text-[10px] text-stone-400">Citizens & Legal Counsel</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {publicRoles.map((role) => {
+                  const Icon = role.icon;
+                  const isSelected = selectedRole.id === role.id;
+                  return (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => handleSelectRole(role)}
+                      className={`p-3 rounded-lg border text-left transition-all flex items-center gap-3 cursor-pointer ${
+                        isSelected
+                          ? "border-amber-500/80 bg-[#28211b] text-stone-100 font-semibold ring-1 ring-amber-500/40"
+                          : "border-[#2d2621] hover:border-[#443a33] bg-[#14110f] text-stone-400 hover:text-stone-200"
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded border flex items-center justify-center shrink-0 ${
+                        isSelected ? "border-amber-500/60 bg-amber-950/60 text-amber-400" : "border-[#382e26] bg-[#1e1916] text-stone-400"
+                      }`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold leading-tight text-stone-200">{role.name}</p>
+                        <p className="text-[10px] text-stone-400 line-clamp-1 mt-0.5">{role.desc}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Authorized Institutional Access */}
+            <div className="space-y-1.5 pt-2 border-t border-[#2d2621]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                  Authorized Institutional Access
+                </span>
+                <span className="text-[10px] text-stone-400">Courts, Police & Administration</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {institutionalRoles.map((role) => {
+                  const Icon = role.icon;
+                  const isSelected = selectedRole.id === role.id;
+                  return (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => handleSelectRole(role)}
+                      className={`p-2.5 rounded-lg border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                        isSelected
+                          ? "border-emerald-500/80 bg-[#16231c] text-stone-100 font-semibold ring-1 ring-emerald-500/40"
+                          : "border-[#2d2621] hover:border-[#443a33] bg-[#14110f] text-stone-400 hover:text-stone-200"
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 mb-1.5 ${isSelected ? "text-emerald-400" : "text-stone-500"}`} />
+                      <div>
+                        <p className="text-[11px] font-semibold leading-tight text-stone-200">{role.name}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -381,7 +504,7 @@ export default function AuthPage() {
 
           {/* Verification Form */}
           <form onSubmit={handleVerifyOTP} className="space-y-4">
-            {/* Full Name input is shown for Registration / Sign In, or optionally for Log In */}
+            {/* Full Name input is shown for Registration / Sign In */}
             {authMode === "register" ? (
               <div>
                 <label className="block text-xs font-medium text-stone-300 mb-1.5">
@@ -400,7 +523,7 @@ export default function AuthPage() {
 
             <div>
               <label className="block text-xs font-medium text-stone-300 mb-1.5">
-                {authMode === "login" ? "Registered Email Address" : "Email Address for OTP Verification"} <span className="text-rose-400">*</span>
+                {authMode === "login" ? "Registered Email Address" : "Email Address for Account & Verification"} <span className="text-rose-400">*</span>
               </label>
               <div className="flex gap-2">
                 <input
@@ -430,6 +553,50 @@ export default function AuthPage() {
                 </button>
               </div>
             </div>
+
+            {/* Optional Phone and Masked Aadhaar on Registration */}
+            {authMode === "register" && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                    Phone Number <span className="text-stone-500 font-normal">(Optional • For eCourts SMS Updates)</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="bw-input"
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium text-stone-300">
+                      Aadhaar Number <span className="text-stone-500 font-normal">(Optional • Masked § 63 BSA)</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-400 font-mono">UIDAI Privacy Masked</span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={14}
+                    value={aadhaar}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+                      const formatted = digits.replace(/(\d{4})(?=\d)/g, "$1 ");
+                      setAadhaar(formatted);
+                    }}
+                    className="bw-input font-mono"
+                    placeholder="XXXX XXXX XXXX (12 digits)"
+                  />
+                  {aadhaar.replace(/\D/g, "").length >= 4 && (
+                    <p className="text-[10px] text-stone-400 mt-1 font-mono">
+                      Masked display preview: <strong className="text-amber-300">•••• •••• {aadhaar.replace(/\D/g, "").slice(-4)}</strong> (Full number is never revealed)
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* OTP Input Field */}
             {otpSent && (

@@ -95,13 +95,38 @@ export async function apiVerifyOTP(
 
   if (res.token && typeof window !== "undefined") {
     localStorage.setItem("nyayaflow_token", res.token);
-    localStorage.setItem("nyayaflow_user", JSON.stringify(res.user));
+    let existing: any = {};
+    try {
+      existing = JSON.parse(localStorage.getItem("nyayaflow_user") || "{}");
+    } catch (e) {}
+
+    const incomingUser = res.user || {};
+    const genericNames = ["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"];
+    const effectiveName =
+      incomingUser.fullName && !genericNames.includes(incomingUser.fullName)
+        ? incomingUser.fullName
+        : fullName && fullName.trim() && !genericNames.includes(fullName)
+        ? fullName.trim()
+        : existing.fullName && !genericNames.includes(existing.fullName)
+        ? existing.fullName
+        : existing.name && !genericNames.includes(existing.name)
+        ? existing.name
+        : incomingUser.fullName;
+
+    localStorage.setItem(
+      "nyayaflow_user",
+      JSON.stringify({
+        ...existing,
+        ...incomingUser,
+        fullName: effectiveName,
+      })
+    );
   }
 
   return res;
 }
 
-export async function apiAuthLogin(email: string, fullName: string = "Authorized User", role: string = "citizen", phone?: string) {
+export async function apiAuthLogin(email: string, fullName?: string, role: string = "citizen", phone?: string) {
   const res = await jsonFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, full_name: fullName, role, phone }),
@@ -109,14 +134,32 @@ export async function apiAuthLogin(email: string, fullName: string = "Authorized
 
   if (res.token && typeof window !== "undefined") {
     localStorage.setItem("nyayaflow_token", res.token);
+    let existing: any = {};
+    try {
+      existing = JSON.parse(localStorage.getItem("nyayaflow_user") || "{}");
+    } catch (e) {}
+
+    const genericNames = ["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"];
+    const effectiveName =
+      res.full_name && !genericNames.includes(res.full_name)
+        ? res.full_name
+        : fullName && fullName.trim() && !genericNames.includes(fullName)
+        ? fullName.trim()
+        : existing.fullName && !genericNames.includes(existing.fullName)
+        ? existing.fullName
+        : existing.name && !genericNames.includes(existing.name)
+        ? existing.name
+        : res.full_name;
+
     localStorage.setItem(
       "nyayaflow_user",
       JSON.stringify({
+        ...existing,
         id: res.id,
-        fullName: res.full_name || fullName,
+        fullName: effectiveName,
         role: res.role || role,
         email: res.email || email,
-        phone: res.phone || phone,
+        phone: res.phone || phone || existing.phone,
       })
     );
   }

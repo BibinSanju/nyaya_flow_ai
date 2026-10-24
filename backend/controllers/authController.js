@@ -71,7 +71,18 @@ class AuthController {
           role: targetRole,
           lastLogin: new Date(),
         };
-        if (fullName && fullName.trim()) {
+
+        const isGenericName =
+          !fullName ||
+          fullName.trim() === "Citizen Litigant" ||
+          fullName.trim() === "Citizen" ||
+          fullName.trim() === "Advocate" ||
+          fullName.trim() === "Advocate Counsel" ||
+          fullName.trim() === "Authorized User" ||
+          fullName.trim().startsWith("Verified ");
+
+        // Only update user's name if they don't have one, or if they provided a genuine non-generic name
+        if (fullName && fullName.trim() && (!user.fullName || !isGenericName)) {
           updates.fullName = fullName.trim();
           user.fullName = fullName.trim();
         }

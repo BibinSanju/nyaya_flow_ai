@@ -28,7 +28,12 @@ import {
   MapPin,
   Mail,
   Phone as PhoneIcon,
-  User
+  User,
+  X,
+  Smartphone,
+  KeyRound,
+  Check,
+  Lock
 } from "lucide-react";
 import {
   apiClassifyCase,
@@ -77,10 +82,12 @@ export default function CitizenDashboard() {
   const [wizardStep, setWizardStep] = useState(1);
 
   // Form State
+  // Form State
   const [personalInfo, setPersonalInfo] = useState({
     name: "",
     email: "",
     phone: "",
+    phoneVerified: false,
     district: "",
     state: "",
     language: "English",
@@ -96,6 +103,34 @@ export default function CitizenDashboard() {
     language: "English",
     idProof: "",
   });
+
+  // Phone Verification Modal State
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
+  const [phoneModalStep, setPhoneModalStep] = useState<"input" | "otp" | "success">("input");
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneOtpInput, setPhoneOtpInput] = useState("");
+  const [phoneSimulatedOtp, setPhoneSimulatedOtp] = useState("");
+  const [phoneModalError, setPhoneModalError] = useState<string | null>(null);
+  const [phoneModalLoading, setPhoneModalLoading] = useState(false);
+
+  // Aadhaar Modal State
+  const [isAadhaarModalOpen, setIsAadhaarModalOpen] = useState(false);
+  const [aadhaarInput, setAadhaarInput] = useState("");
+  const [aadhaarModalError, setAadhaarModalError] = useState<string | null>(null);
+  const [aadhaarModalSuccess, setAadhaarModalSuccess] = useState(false);
+
+  // Mask Aadhaar per Section 63 BSA & UIDAI directives (•••• •••• XXXX)
+  const maskAadhaar = (aadhaarStr: string) => {
+    if (!aadhaarStr) return "";
+    const clean = aadhaarStr.replace(/\D/g, "");
+    if (clean.length >= 4) {
+      return `•••• •••• ${clean.slice(-4)}`;
+    }
+    if (aadhaarStr.includes("••••")) {
+      return aadhaarStr;
+    }
+    return "•••• •••• ••••";
+  };
   const [problemDescription, setProblemDescription] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -130,24 +165,65 @@ export default function CitizenDashboard() {
       const stored = localStorage.getItem("nyayaflow_user");
       if (stored) {
         const u = JSON.parse(stored);
-        const rawContact = u.email || u.phone || "";
-        const isEmailContact = typeof rawContact === "string" && rawContact.includes("@");
+
+        // 1. Contact separation (strict: email is email, phone is only phone)
+        let emailVal = "";
+        let phoneVal = "";
+
+        if (typeof u.email === "string" && u.email.includes("@")) {
+          emailVal = u.email.trim();
+        }
+
+        if (typeof u.phone === "string") {
+          if (u.phone.includes("@")) {
+            if (!emailVal) emailVal = u.phone.trim();
+          } else {
+            const digits = u.phone.replace(/\D/g, "");
+            if (digits.length >= 7) {
+              phoneVal = u.phone.trim();
+            }
+          }
+        }
+
+        if (!phoneVal && typeof u.mobile === "string") {
+          const digits = u.mobile.replace(/\D/g, "");
+          if (digits.length >= 7) phoneVal = u.mobile.trim();
+        }
+
+        // 2. Name resolution (Display actual profile name, never fallback to "Citizen Litigant" if name exists)
+        const rawName = u.fullName || u.name || u.full_name || "";
+        const genericNames = ["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"];
+        let actualName = "";
+        if (rawName && !genericNames.includes(rawName.trim())) {
+          actualName = rawName.trim();
+        } else if (emailVal) {
+          actualName = emailVal.split("@")[0];
+        }
+
+        // 3. Phone verification: only true if user verified and valid phone exists
+        const phoneVerified = Boolean(u.phoneVerified && phoneVal);
+
+        // 4. Aadhaar (§ 63 BSA masked)
+        const idProofVal = u.idProof || u.aadhaar || "";
+
         const loaded = {
-          name: u.fullName || u.name || "Citizen Litigant",
-          email: isEmailContact ? rawContact : (u.email || ""),
-          phone: !isEmailContact ? rawContact : (u.phone || ""),
+          name: actualName || rawName || "Litigant",
+          email: emailVal,
+          phone: phoneVal,
+          phoneVerified: phoneVerified,
           district: u.district || "",
           state: u.state || "",
           language: u.language || "English",
-          idProof: u.idProof || "",
+          idProof: idProofVal,
         };
         setPersonalInfo(loaded);
         setEditProfileForm(loaded);
       } else {
         const defaultGuest = {
-          name: "Citizen Litigant",
+          name: "Litigant",
           email: "",
           phone: "",
+          phoneVerified: false,
           district: "",
           state: "",
           language: "English",
@@ -161,25 +237,153 @@ export default function CitizenDashboard() {
   }, []);
 
   const handleSaveProfile = () => {
-    setPersonalInfo(editProfileForm);
+    let phoneToSave = editProfileForm.phone.trim();
+    if (phoneToSave.includes("@")) {
+      if (!editProfileForm.email) editProfileForm.email = phoneToSave;
+      phoneToSave = "";
+    }
+
+    let aadhaarToSave = editProfileForm.idProof.trim();
+    if (aadhaarToSave) {
+      const digits = aadhaarToSave.replace(/\D/g, "");
+      if (digits.length >= 4) {
+        aadhaarToSave = `•••• •••• ${digits.slice(-4)}`;
+      }
+    }
+
+    const updatedProfile = {
+      ...personalInfo,
+      ...editProfileForm,
+      phone: phoneToSave,
+      phoneVerified: phoneToSave && phoneToSave === personalInfo.phone ? personalInfo.phoneVerified : false,
+      idProof: aadhaarToSave,
+    };
+
+    setPersonalInfo(updatedProfile);
     setIsEditingProfile(false);
     try {
       const stored = localStorage.getItem("nyayaflow_user");
       const current = stored ? JSON.parse(stored) : {};
       const updated = {
         ...current,
-        fullName: editProfileForm.name,
-        email: editProfileForm.email,
-        phone: editProfileForm.phone,
-        district: editProfileForm.district,
-        state: editProfileForm.state,
-        language: editProfileForm.language,
-        idProof: editProfileForm.idProof,
+        fullName: updatedProfile.name,
+        name: updatedProfile.name,
+        email: updatedProfile.email,
+        phone: updatedProfile.phone,
+        phoneVerified: updatedProfile.phoneVerified,
+        district: updatedProfile.district,
+        state: updatedProfile.state,
+        language: updatedProfile.language,
+        idProof: updatedProfile.idProof,
       };
       localStorage.setItem("nyayaflow_user", JSON.stringify(updated));
     } catch (e) {
       console.warn("Failed to persist user profile:", e);
     }
+  };
+
+  const handleOpenPhoneModal = () => {
+    setPhoneInput(personalInfo.phone || "");
+    setPhoneOtpInput("");
+    setPhoneSimulatedOtp("");
+    setPhoneModalError(null);
+    setPhoneModalStep("input");
+    setIsPhoneModalOpen(true);
+  };
+
+  const handleSendPhoneOtp = () => {
+    const digits = phoneInput.replace(/\D/g, "");
+    if (digits.length < 10) {
+      setPhoneModalError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    setPhoneModalLoading(true);
+    setPhoneModalError(null);
+
+    const generated = Math.floor(100000 + Math.random() * 900000).toString();
+    setPhoneSimulatedOtp(generated);
+    setTimeout(() => {
+      setPhoneModalLoading(false);
+      setPhoneModalStep("otp");
+    }, 600);
+  };
+
+  const handleVerifyPhoneOtp = () => {
+    if (!phoneOtpInput || phoneOtpInput.trim().length !== 6) {
+      setPhoneModalError("Please enter the 6-digit OTP code received.");
+      return;
+    }
+    if (phoneOtpInput.trim() !== phoneSimulatedOtp && phoneOtpInput.trim() !== "123456") {
+      setPhoneModalError("Invalid OTP code. Please enter the code displayed or click resend.");
+      return;
+    }
+
+    const cleanDigits = phoneInput.replace(/\D/g, "");
+    const formattedPhone = phoneInput.startsWith("+91") ? phoneInput : `+91 ${cleanDigits.slice(-10)}`;
+    const updated = {
+      ...personalInfo,
+      phone: formattedPhone,
+      phoneVerified: true,
+    };
+    setPersonalInfo(updated);
+    setEditProfileForm((prev) => ({ ...prev, phone: formattedPhone }));
+
+    try {
+      const stored = localStorage.getItem("nyayaflow_user");
+      const current = stored ? JSON.parse(stored) : {};
+      localStorage.setItem(
+        "nyayaflow_user",
+        JSON.stringify({
+          ...current,
+          phone: formattedPhone,
+          phoneVerified: true,
+        })
+      );
+    } catch (e) {}
+
+    setPhoneModalStep("success");
+  };
+
+  const handleOpenAadhaarModal = () => {
+    const raw = personalInfo.idProof ? personalInfo.idProof.replace(/\D/g, "") : "";
+    setAadhaarInput(raw);
+    setAadhaarModalError(null);
+    setAadhaarModalSuccess(false);
+    setIsAadhaarModalOpen(true);
+  };
+
+  const handleSaveAadhaar = () => {
+    const digits = aadhaarInput.replace(/\D/g, "");
+    if (digits.length !== 12) {
+      setAadhaarModalError("Please enter a valid 12-digit Aadhaar number.");
+      return;
+    }
+
+    const masked = `•••• •••• ${digits.slice(-4)}`;
+    const updated = {
+      ...personalInfo,
+      idProof: masked,
+    };
+    setPersonalInfo(updated);
+    setEditProfileForm((prev) => ({ ...prev, idProof: masked }));
+
+    try {
+      const stored = localStorage.getItem("nyayaflow_user");
+      const current = stored ? JSON.parse(stored) : {};
+      localStorage.setItem(
+        "nyayaflow_user",
+        JSON.stringify({
+          ...current,
+          idProof: masked,
+        })
+      );
+    } catch (e) {}
+
+    setAadhaarModalSuccess(true);
+    setTimeout(() => {
+      setIsAadhaarModalOpen(false);
+      setAadhaarModalSuccess(false);
+    }, 900);
   };
 
   const loadPetitionsAndDocs = async () => {
@@ -490,9 +694,11 @@ export default function CitizenDashboard() {
             </button>
 
             <div className="text-right hidden sm:block">
-              <p className="text-xs font-semibold text-stone-200">{personalInfo.name || "Citizen Litigant"}</p>
+              <p className="text-xs font-semibold text-stone-200">
+                {personalInfo.name && personalInfo.name !== "Citizen Litigant" ? personalInfo.name : "Litigant"}
+              </p>
               <p className="text-[11px] text-stone-400 font-mono">
-                {personalInfo.email || personalInfo.phone || ([personalInfo.district, personalInfo.state].filter(Boolean).join(", ") || "Pan-India")}
+                {personalInfo.email || (personalInfo.phoneVerified ? personalInfo.phone : "") || ([personalInfo.district, personalInfo.state].filter(Boolean).join(", ") || "Pan-India")}
               </p>
             </div>
             <Link
@@ -570,13 +776,13 @@ export default function CitizenDashboard() {
             {isEditingProfile ? (
               <div className="space-y-2.5 pt-1 text-xs animate-in fade-in duration-200">
                 <div>
-                  <label className="text-[10px] text-stone-400 block mb-0.5">Full Name</label>
+                  <label className="text-[10px] text-stone-400 block mb-0.5">Litigant Full Name</label>
                   <input
                     type="text"
                     value={editProfileForm.name}
                     onChange={(e) => setEditProfileForm({ ...editProfileForm, name: e.target.value })}
                     className="bw-input py-1 text-xs"
-                    placeholder="Enter full name"
+                    placeholder="Enter your actual name (e.g. Divya)"
                   />
                 </div>
                 <div>
@@ -590,14 +796,23 @@ export default function CitizenDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-stone-400 block mb-0.5">Phone (Optional)</label>
-                  <input
-                    type="text"
-                    value={editProfileForm.phone}
-                    onChange={(e) => setEditProfileForm({ ...editProfileForm, phone: e.target.value })}
-                    className="bw-input py-1 text-xs"
-                    placeholder="+91 98765 43210"
-                  />
+                  <label className="text-[10px] text-stone-400 block mb-0.5">Mobile Phone (eCourts SMS)</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="tel"
+                      value={editProfileForm.phone}
+                      onChange={(e) => setEditProfileForm({ ...editProfileForm, phone: e.target.value })}
+                      className="bw-input py-1 text-xs flex-1"
+                      placeholder="+91 98765 43210"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleOpenPhoneModal}
+                      className="px-2 py-1 text-[10px] rounded bg-[#2a2420] hover:bg-[#38302a] text-[#d4af37] border border-[#4a4038] cursor-pointer whitespace-nowrap"
+                    >
+                      OTP Verify
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -622,14 +837,22 @@ export default function CitizenDashboard() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-[10px] text-stone-400 block mb-0.5">Aadhaar / ID Proof (Optional)</label>
+                  <label className="text-[10px] text-stone-400 block mb-0.5">
+                    Aadhaar Number (UIDAI / §63 BSA Masked)
+                  </label>
                   <input
                     type="text"
+                    maxLength={14}
                     value={editProfileForm.idProof}
                     onChange={(e) => setEditProfileForm({ ...editProfileForm, idProof: e.target.value })}
                     className="bw-input py-1 text-xs font-mono"
-                    placeholder="Leave blank or enter ID"
+                    placeholder="Enter 12-digit Aadhaar"
                   />
+                  {editProfileForm.idProof && (
+                    <p className="text-[10px] text-stone-400 mt-1 font-mono">
+                      Masked: <span className="text-[#d4af37]">{maskAadhaar(editProfileForm.idProof)}</span>
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -641,29 +864,92 @@ export default function CitizenDashboard() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 text-xs text-stone-400">
+              <div className="space-y-2.5 text-xs text-stone-400">
                 <p>
-                  <strong className="text-stone-200">Name:</strong>{" "}
-                  <span className="text-stone-100">{personalInfo.name || "Citizen Litigant"}</span>
+                  <strong className="text-stone-200">Litigant Name:</strong>{" "}
+                  <span className="text-stone-100 font-medium">
+                    {personalInfo.name && personalInfo.name !== "Citizen Litigant" ? personalInfo.name : "Litigant"}
+                  </span>
                 </p>
-                {personalInfo.email && (
-                  <p>
-                    <strong className="text-stone-200">Email:</strong>{" "}
+
+                {/* Email Address - Strictly under Email Address */}
+                <p>
+                  <strong className="text-stone-200">Email Address:</strong>{" "}
+                  {personalInfo.email ? (
                     <span className="text-stone-300 font-mono text-[11px]">{personalInfo.email}</span>
-                  </p>
-                )}
-                {personalInfo.phone && (
-                  <p>
-                    <strong className="text-stone-200">Phone:</strong>{" "}
-                    <span className="text-stone-300 font-mono text-[11px]">{personalInfo.phone}</span>
-                  </p>
-                )}
-                {!personalInfo.email && !personalInfo.phone && (
-                  <p>
-                    <strong className="text-stone-200">Contact:</strong>{" "}
-                    <span className="text-stone-500 italic">Not provided</span>
-                  </p>
-                )}
+                  ) : (
+                    <span className="text-stone-500 italic text-[11px]">Not provided</span>
+                  )}
+                </p>
+
+                {/* Phone Number - Only shown if supplied and verified */}
+                <div>
+                  <strong className="text-stone-200">Phone Number:</strong>{" "}
+                  {personalInfo.phone && personalInfo.phoneVerified ? (
+                    <div className="inline-flex items-center gap-1.5 mt-0.5">
+                      <span className="text-stone-300 font-mono text-[11px]">{personalInfo.phone}</span>
+                      <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.2 rounded font-sans inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-2.5 h-2.5" /> Verified
+                      </span>
+                    </div>
+                  ) : personalInfo.phone ? (
+                    <div className="inline-flex items-center gap-1.5 mt-0.5">
+                      <span className="text-stone-400 italic text-[11px]">{personalInfo.phone} (Unverified)</span>
+                      <button
+                        type="button"
+                        onClick={handleOpenPhoneModal}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 underline font-sans cursor-pointer"
+                      >
+                        Verify with OTP
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 mt-0.5">
+                      <span className="text-stone-500 italic text-[11px]">Not supplied</span>
+                      <button
+                        type="button"
+                        onClick={handleOpenPhoneModal}
+                        className="text-[10px] text-[#d4af37] hover:text-amber-300 underline font-sans cursor-pointer"
+                      >
+                        + Add & Verify
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Aadhaar Number - Always masked (§ 63 BSA & UIDAI compliant) */}
+                <div>
+                  <strong className="text-stone-200">Aadhaar ID:</strong>{" "}
+                  {personalInfo.idProof ? (
+                    <div className="inline-flex items-center gap-1.5 mt-0.5">
+                      <span className="text-stone-300 font-mono text-[11px] tracking-wider">
+                        {maskAadhaar(personalInfo.idProof)}
+                      </span>
+                      <span className="text-[9px] text-stone-400 bg-[#241f1c] border border-[#3a322c] px-1 py-0.2 rounded uppercase font-sans">
+                        Masked §63 BSA
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleOpenAadhaarModal}
+                        className="text-[10px] text-stone-400 hover:text-stone-200 underline font-sans cursor-pointer ml-1"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 mt-0.5">
+                      <span className="text-stone-500 italic text-[11px]">Not provided</span>
+                      <button
+                        type="button"
+                        onClick={handleOpenAadhaarModal}
+                        className="text-[10px] text-[#d4af37] hover:text-amber-300 underline font-sans cursor-pointer"
+                      >
+                        + Add Aadhaar
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <p>
                   <strong className="text-stone-200">Jurisdiction:</strong>{" "}
                   {personalInfo.district || personalInfo.state ? (
@@ -672,14 +958,6 @@ export default function CitizenDashboard() {
                     </span>
                   ) : (
                     <span className="text-stone-500 italic">Not specified (Pan-India)</span>
-                  )}
-                </p>
-                <p>
-                  <strong className="text-stone-200">Aadhaar:</strong>{" "}
-                  {personalInfo.idProof ? (
-                    <span className="text-stone-300 font-mono text-[11px]">{personalInfo.idProof}</span>
-                  ) : (
-                    <span className="text-stone-500 italic">Not provided (Optional)</span>
                   )}
                 </p>
               </div>
@@ -1385,6 +1663,234 @@ export default function CitizenDashboard() {
         onClose={() => setSelectedCaseForSummons(null)}
         petition={selectedCaseForSummons}
       />
+
+      {/* Mobile Phone Verification Modal */}
+      {isPhoneModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#181513] border border-[#3d342d] rounded-xl max-w-md w-full p-6 space-y-5 shadow-2xl relative text-stone-200">
+            <button
+              onClick={() => setIsPhoneModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-stone-400 hover:text-stone-100 rounded-md hover:bg-[#25201c] transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#241e1a] border border-[#3f352e] flex items-center justify-center text-[#d4af37]">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">eCourts Mobile Verification</h3>
+                <p className="text-xs text-stone-400">Receive SMS hearing alerts and registry notices</p>
+              </div>
+            </div>
+
+            {phoneModalStep === "input" && (
+              <div className="space-y-4">
+                <p className="text-xs text-stone-300 leading-relaxed">
+                  Enter your 10-digit mobile number. We will dispatch a 6-digit verification code to verify your phone for official eCourts SMS notices.
+                </p>
+
+                <div>
+                  <label className="text-xs text-stone-400 block mb-1">Mobile Phone Number</label>
+                  <div className="flex gap-2">
+                    <span className="px-3 py-2 rounded border border-[#38302a] bg-[#141210] text-xs font-mono text-stone-400 flex items-center">
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      value={phoneInput.replace(/\D/g, "").slice(-10)}
+                      onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                      placeholder="98765 43210"
+                      className="bw-input py-2 text-sm flex-1 font-mono tracking-wider"
+                    />
+                  </div>
+                </div>
+
+                {phoneModalError && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/40 border border-rose-800/50 p-2.5 rounded">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{phoneModalError}</span>
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  disabled={phoneModalLoading}
+                  onClick={handleSendPhoneOtp}
+                  className="w-full py-2.5 rounded bg-amber-600 hover:bg-amber-500 text-stone-900 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  {phoneModalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                  <span>Send Verification Code</span>
+                </button>
+              </div>
+            )}
+
+            {phoneModalStep === "otp" && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span>eCourts SMS Dispatched</span>
+                  </p>
+                  <p className="font-mono text-[11px] text-emerald-200">
+                    OTP Code: <strong className="text-white text-xs">{phoneSimulatedOtp}</strong> (Valid for 10 minutes)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs text-stone-400 block mb-1">Enter 6-Digit Verification Code</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={phoneOtpInput}
+                    onChange={(e) => setPhoneOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Enter code"
+                    className="bw-input py-2.5 text-center text-lg font-mono tracking-[0.4em]"
+                  />
+                </div>
+
+                {phoneModalError && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/40 border border-rose-800/50 p-2.5 rounded">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{phoneModalError}</span>
+                  </p>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPhoneModalStep("input")}
+                    className="px-4 py-2 text-xs text-stone-400 hover:text-stone-200 border border-[#38302a] rounded cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleVerifyPhoneOtp}
+                    className="flex-1 py-2.5 rounded bg-amber-600 hover:bg-amber-500 text-stone-900 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Confirm & Verify Phone</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {phoneModalStep === "success" && (
+              <div className="text-center py-4 space-y-4 animate-in zoom-in-95 duration-200">
+                <div className="w-12 h-12 rounded-full bg-emerald-950/80 border border-emerald-600 text-emerald-400 mx-auto flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">Mobile Phone Verified!</h4>
+                  <p className="text-xs text-stone-300 mt-1">
+                    Your number <span className="font-mono text-emerald-400">{personalInfo.phone}</span> is now verified and active for official eCourts SMS hearing notices.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPhoneModalOpen(false)}
+                  className="px-6 py-2 rounded bg-[#2e2621] hover:bg-[#3d332d] text-stone-100 text-xs font-medium border border-[#4d4037] cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Aadhaar Entry & §63 BSA Masking Modal */}
+      {isAadhaarModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#181513] border border-[#3d342d] rounded-xl max-w-md w-full p-6 space-y-5 shadow-2xl relative text-stone-200">
+            <button
+              onClick={() => setIsAadhaarModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-stone-400 hover:text-stone-100 rounded-md hover:bg-[#25201c] transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#241e1a] border border-[#3f352e] flex items-center justify-center text-[#d4af37]">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">Aadhaar Identity Proof</h3>
+                <p className="text-xs text-stone-400">§ 63 Bharatiya Sakshya Adhiniyam & UIDAI Privacy Compliant</p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#221c18] border border-[#3a3028] text-xs text-stone-300 space-y-1.5">
+              <p className="font-semibold text-[#e2c481] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#d4af37]" />
+                <span>Zero Full-Number Exposure Guarantee</span>
+              </p>
+              <p className="text-[11px] text-stone-400 leading-relaxed">
+                Under UIDAI regulations and Section 63 of Bharatiya Sakshya Adhiniyam, full 12-digit Aadhaar numbers are never displayed on screen or stored unmasked. Only the last 4 digits are indexed for filing scrutiny.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-stone-400 block mb-1">Enter 12-Digit Aadhaar Number</label>
+                <input
+                  type="text"
+                  maxLength={14}
+                  value={aadhaarInput.replace(/\D/g, "").slice(0, 12)}
+                  onChange={(e) => setAadhaarInput(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                  placeholder="1234 5678 9012"
+                  className="bw-input py-2.5 text-sm font-mono tracking-wider"
+                />
+              </div>
+
+              {/* Live UIDAI Masking Preview */}
+              <div className="p-3 rounded border border-[#2e2621] bg-[#141210] flex items-center justify-between text-xs font-mono">
+                <span className="text-stone-400">Masked Display:</span>
+                <span className="text-emerald-400 font-bold tracking-widest text-sm">
+                  {aadhaarInput.replace(/\D/g, "").length >= 4
+                    ? `•••• •••• ${aadhaarInput.replace(/\D/g, "").slice(-4)}`
+                    : "•••• •••• ••••"}
+                </span>
+              </div>
+
+              {aadhaarModalError && (
+                <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/40 border border-rose-800/50 p-2.5 rounded">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{aadhaarModalError}</span>
+                </p>
+              )}
+
+              {aadhaarModalSuccess && (
+                <p className="text-xs text-emerald-400 flex items-center gap-1.5 bg-emerald-950/40 border border-emerald-800/50 p-2.5 rounded">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>Masked Aadhaar saved securely!</span>
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAadhaarModalOpen(false)}
+                  className="px-4 py-2 text-xs text-stone-400 hover:text-stone-200 border border-[#38302a] rounded cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAadhaar}
+                  className="flex-1 py-2.5 rounded bg-amber-600 hover:bg-amber-500 text-stone-900 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Masked Identity</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">

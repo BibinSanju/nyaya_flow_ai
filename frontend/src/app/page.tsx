@@ -19,10 +19,10 @@ import {
 } from "lucide-react";
 
 export default function LandingPage() {
-  const roles = [
+  const publicRoles = [
     {
       id: "citizen",
-      title: "Citizen Litigant",
+      title: "Citizen",
       roleDesc: "Petitions & Status",
       icon: User,
       summary:
@@ -31,17 +31,20 @@ export default function LandingPage() {
     },
     {
       id: "advocate",
-      title: "Advocate Counsel",
+      title: "Advocate",
       roleDesc: "Legal Counsel",
       icon: Briefcase,
       summary:
         "Manage vakalatnama authorizations, inspect client filings, and prepare verified case briefs for registry submission.",
       href: "/advocate/dashboard",
     },
+  ];
+
+  const institutionalRoles = [
     {
       id: "police",
-      title: "Investigating Officer",
-      roleDesc: "Police Department",
+      title: "Police Officer",
+      roleDesc: "Investigation Wing",
       icon: Shield,
       summary:
         "Register incident narratives, reference Bharatiya Nyaya Sanhita (BNS) sections, and log digital case evidence records.",
@@ -235,49 +238,109 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Stakeholder Roles Grid */}
-        <section className="space-y-4">
+        {/* Stakeholder Workspaces - Categorized by Access Level */}
+        <section className="space-y-8">
           <div className="border-b border-[#2e2824] pb-2 flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wider text-stone-300">
               Stakeholder Workspaces
             </h2>
-            <span className="text-[11px] text-stone-400">Select Role to Enter</span>
+            <span className="text-[11px] text-stone-400">Access Level Segmented</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {roles.map((role) => {
-              const Icon = role.icon;
-              return (
-                <Link
-                  key={role.id}
-                  href={role.href}
-                  className="p-5 border border-[#2e2824] rounded-lg bg-[#181513] hover:border-[#4a4038] hover:bg-[#1e1a17] transition-all flex flex-col justify-between space-y-3"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="w-8 h-8 rounded bg-[#241f1c] border border-[#3a322c] flex items-center justify-center text-[#d4af37]">
-                        <Icon className="w-4 h-4" />
+          {/* Public Access Workspaces */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 uppercase tracking-wide">
+                Public Access
+              </span>
+              <p className="text-xs text-stone-400">
+                Directly accessible for case grievance filings, status tracking, and legal representation
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {publicRoles.map((role) => {
+                const Icon = role.icon;
+                return (
+                  <Link
+                    key={role.id}
+                    href={role.href}
+                    className="p-5 border border-[#2e2824] rounded-lg bg-[#181513] hover:border-emerald-600/50 hover:bg-[#1e1a17] transition-all flex flex-col justify-between space-y-3 group"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="w-8 h-8 rounded bg-[#241f1c] border border-[#3a322c] flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="text-[10px] font-mono text-stone-300 bg-[#241f1c] border border-[#332c26] px-2 py-0.5 rounded">
+                          {role.roleDesc}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-mono text-stone-300 bg-[#241f1c] border border-[#332c26] px-2 py-0.5 rounded">
-                        {role.roleDesc}
-                      </span>
+
+                      <h3 className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors">
+                        {role.title}
+                      </h3>
+                      <p className="text-xs text-stone-300 leading-relaxed">
+                        {role.summary}
+                      </p>
                     </div>
 
-                    <h3 className="text-sm font-semibold text-white">
-                      {role.title}
-                    </h3>
-                    <p className="text-xs text-stone-300 leading-relaxed">
-                      {role.summary}
-                    </p>
-                  </div>
+                    <div className="pt-2 flex items-center text-xs font-medium text-emerald-400 gap-1.5">
+                      <span>Open Workspace</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
 
-                  <div className="pt-2 flex items-center text-xs font-medium text-stone-300 gap-1.5">
-                    <span>Open Workspace</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </div>
-                </Link>
-              );
-            })}
+          {/* Authorized Institutional Access Workspaces */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-amber-950/60 text-[#d4af37] border border-[#d4af37]/40 uppercase tracking-wide">
+                Authorized Institutional Access
+              </span>
+              <p className="text-xs text-stone-400">
+                Restricted to verified judicial bench, police investigation wing, registry, and system administrators
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {institutionalRoles.map((role) => {
+                const Icon = role.icon;
+                return (
+                  <Link
+                    key={role.id}
+                    href={role.href}
+                    className="p-5 border border-[#2e2824] rounded-lg bg-[#181513] hover:border-[#d4af37]/50 hover:bg-[#1e1a17] transition-all flex flex-col justify-between space-y-3 group"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="w-8 h-8 rounded bg-[#241f1c] border border-[#3a322c] flex items-center justify-center text-[#d4af37] group-hover:scale-105 transition-transform">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="text-[10px] font-mono text-stone-300 bg-[#241f1c] border border-[#332c26] px-2 py-0.5 rounded">
+                          {role.roleDesc}
+                        </span>
+                      </div>
+
+                      <h3 className="text-sm font-semibold text-white group-hover:text-[#e2c481] transition-colors">
+                        {role.title}
+                      </h3>
+                      <p className="text-xs text-stone-300 leading-relaxed">
+                        {role.summary}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 flex items-center text-xs font-medium text-[#d4af37] gap-1.5">
+                      <span>Open Workspace</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </section>
       </main>
