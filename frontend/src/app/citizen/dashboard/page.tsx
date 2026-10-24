@@ -33,7 +33,11 @@ import {
   Smartphone,
   KeyRound,
   Check,
-  Lock
+  Lock,
+  Clock,
+  FileSearch,
+  ClipboardCheck,
+  AlertTriangle
 } from "lucide-react";
 import {
   apiClassifyCase,
@@ -668,8 +672,12 @@ export default function CitizenDashboard() {
     try {
       const res = await apiCreatePetition(newPetition);
       if (res?.petition) {
-        setSubmittedPetition(res.petition);
-        setPetitions((prev) => [res.petition, ...prev]);
+        const petWithDocs = {
+          ...res.petition,
+          documents_count: uploadedDocs.length,
+        };
+        setSubmittedPetition(petWithDocs);
+        setPetitions((prev) => [petWithDocs, ...prev]);
         setWizardStep(4);
         return;
       }
@@ -679,8 +687,9 @@ export default function CitizenDashboard() {
 
     const fallbackPet = {
       ...newPetition,
-      id: "CNR-DL-2026-" + Math.floor(10000 + Math.random() * 90000),
-      cnr_number: "DLCT01-" + Math.floor(100000 + Math.random() * 900000) + "-2026",
+      id: "IN-REG-" + Math.floor(100000 + Math.random() * 900000),
+      cnr_number: null,
+      documents_count: uploadedDocs.length,
       created_at: new Date().toISOString(),
     };
     setSubmittedPetition(fallbackPet);
@@ -765,7 +774,7 @@ export default function CitizenDashboard() {
               }`}
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Track Registered Cases</span>
+              <span>Track E-Filings & Cases</span>
             </button>
 
             <button
@@ -1013,7 +1022,7 @@ export default function CitizenDashboard() {
                   </span>
                   <span>→</span>
                   <span className={`px-2.5 py-1 rounded text-xs ${wizardStep === 4 ? "bg-[#2a2420] text-stone-100 border border-[#4a4038]" : "bg-[#14110f] text-stone-500 border border-[#2d2621]"}`}>
-                    4. Submission
+                    4. Registry Scrutiny
                   </span>
                 </div>
               </div>
@@ -1706,47 +1715,183 @@ export default function CitizenDashboard() {
                       onClick={handleSubmitPetition}
                       className="bw-btn-primary px-4 py-2 text-xs font-semibold"
                     >
-                      <span>Submit Petition to Court Registry</span>
+                      <span>Submit for Registry Scrutiny</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 4: SUBMISSION CONFIRMATION */}
+              {/* STEP 4: REGISTRY SCRUTINY INTAKE CONFIRMATION */}
               {wizardStep === 4 && (
-                <div className="py-8 text-center space-y-4">
-                  <div className="w-12 h-12 rounded-full bg-[#221c18] border border-[#3e352f] text-stone-200 flex items-center justify-center mx-auto">
-                    <CheckCircle className="w-6 h-6 text-stone-300" />
+                <div className="py-6 space-y-6 animate-in fade-in duration-300">
+                  {/* Status Icon & Header */}
+                  <div className="text-center space-y-3">
+                    <div className="w-14 h-14 rounded-full bg-amber-950/40 border-2 border-amber-500/50 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-950/40">
+                      <FileSearch className="w-7 h-7" />
+                    </div>
+
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-amber-950/60 text-amber-300 border border-amber-700/60 uppercase tracking-wider">
+                      <Clock className="w-3.5 h-3.5 animate-pulse" />
+                      Stage 2: Registry Scrutiny Queued
+                    </div>
+
+                    <h2 className="text-2xl font-bold text-stone-100 tracking-tight">
+                      Grievance Saved & Queued for Registry Scrutiny
+                    </h2>
+
+                    <p className="text-xs text-stone-400 max-w-xl mx-auto leading-relaxed">
+                      Your legal grievance statement and uploaded annexures have been recorded in the central e-filing intake repository. The matter is currently queued for formal defect scrutiny by the Court Registrar Clerk.
+                    </p>
                   </div>
 
-                  <h2 className="text-xl font-bold text-stone-100">
-                    Petition Transmitted to Court Registry
-                  </h2>
+                  {/* MANDATORY LEGAL NOTICE BANNER */}
+                  <div className="max-w-xl mx-auto p-4 rounded-xl border border-amber-800/40 bg-[#1f1812]/90 text-left flex items-start gap-3.5 shadow-lg shadow-black/30">
+                    <div className="w-8 h-8 rounded-lg bg-amber-950/90 border border-amber-700/50 flex items-center justify-center shrink-0 mt-0.5 text-amber-400">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-1 text-xs">
+                      <h4 className="font-semibold text-amber-300 flex items-center gap-2">
+                        <span>Important Judicial Notice: E-Filing is NOT Court Acceptance</span>
+                      </h4>
+                      <p className="text-stone-300 text-[11px] leading-relaxed">
+                        The court has <strong>not yet admitted</strong>, accepted, or listed your case for judicial hearing. In the Indian judicial system, every newly lodged grievance must first undergo preliminary defect verification (Order VII CPC / Court Registry Rules) before a formal 16-character CNR is minted and assigned to a judge.
+                      </p>
+                    </div>
+                  </div>
 
-                  <p className="text-xs text-stone-400 max-w-md mx-auto leading-relaxed">
-                    Your petition has been registered for Scrutiny by the Court Registrar Clerk. The case has been indexed into the central cause ledger.
-                  </p>
+                  {/* 4-STAGE VISUAL INTAKE PIPELINE */}
+                  <div className="max-w-xl mx-auto p-4 rounded-xl border border-[#2d2621] bg-[#14110f] space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-[#241e1a]">
+                      <span className="text-xs font-semibold text-stone-300 uppercase tracking-wider">
+                        Judicial Intake Lifecycle
+                      </span>
+                      <span className="text-[11px] text-amber-400 font-medium">
+                        Current: Stage 2 of 4
+                      </span>
+                    </div>
 
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-left">
+                      {/* Stage 1 */}
+                      <div className="p-2.5 rounded-lg border border-emerald-900/60 bg-emerald-950/20 space-y-1">
+                        <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>1. Intake</span>
+                        </div>
+                        <p className="text-[10px] text-emerald-300/80 font-medium">Dispute Saved</p>
+                        <p className="text-[9px] text-stone-400 leading-tight">Grievance & docs securely vaulted</p>
+                      </div>
+
+                      {/* Stage 2 (ACTIVE) */}
+                      <div className="p-2.5 rounded-lg border-2 border-amber-500/70 bg-amber-950/30 space-y-1 relative shadow-md shadow-amber-950/30">
+                        <div className="flex items-center gap-1.5 text-amber-300 text-[11px] font-bold">
+                          <Clock className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                          <span>2. Scrutiny</span>
+                        </div>
+                        <p className="text-[10px] text-amber-200 font-semibold">Under Review</p>
+                        <p className="text-[9px] text-stone-300 leading-tight">Clerk checking procedural defects</p>
+                      </div>
+
+                      {/* Stage 3 */}
+                      <div className="p-2.5 rounded-lg border border-[#2d2621] bg-[#1a1614]/60 space-y-1 opacity-70">
+                        <div className="flex items-center gap-1.5 text-stone-400 text-[11px] font-medium">
+                          <Lock className="w-3 h-3" />
+                          <span>3. CNR Issue</span>
+                        </div>
+                        <p className="text-[10px] text-stone-400">Locked</p>
+                        <p className="text-[9px] text-stone-500 leading-tight">Requires defect clearance</p>
+                      </div>
+
+                      {/* Stage 4 */}
+                      <div className="p-2.5 rounded-lg border border-[#2d2621] bg-[#1a1614]/60 space-y-1 opacity-60">
+                        <div className="flex items-center gap-1.5 text-stone-400 text-[11px] font-medium">
+                          <Building className="w-3 h-3" />
+                          <span>4. Admission</span>
+                        </div>
+                        <p className="text-[10px] text-stone-400">Pending</p>
+                        <p className="text-[9px] text-stone-500 leading-tight">Listing before judicial bench</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* INTAKE RECEIPT CARD */}
                   {submittedPetition && (
-                    <div className="max-w-md mx-auto p-4 border border-[#2d2621] rounded-lg bg-[#14110f] text-left text-xs space-y-1.5 text-stone-300">
-                      <p><strong className="text-stone-400">Tracking Number:</strong> <span className="font-mono text-stone-200">{submittedPetition.id}</span></p>
-                      <p><strong className="text-stone-400">Allocated CNR:</strong> <span className="font-mono text-stone-200">{submittedPetition.cnr_number}</span></p>
-                      <p><strong className="text-stone-400">Category:</strong> {submittedPetition.category}</p>
-                      <p><strong className="text-stone-400">Status:</strong> <span className="text-stone-200 font-semibold">{submittedPetition.status}</span></p>
-                      <p><strong className="text-stone-400">Documents Attached:</strong> {submittedPetition.documents_count}</p>
+                    <div className="max-w-xl mx-auto p-4 border border-[#2d2621] rounded-xl bg-[#14110f] text-left text-xs space-y-2.5 text-stone-300">
+                      <div className="flex items-center justify-between pb-2.5 border-b border-[#241e1a]">
+                        <div>
+                          <span className="text-[10px] text-stone-500 uppercase tracking-wider block">Intake Reference / Tracking Number</span>
+                          <span className="font-mono text-xs font-semibold text-stone-100">{submittedPetition.id}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-stone-500 uppercase tracking-wider block">Registry Status</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-950/60 text-amber-300 border border-amber-800/60">
+                            <Clock className="w-2.5 h-2.5" />
+                            {submittedPetition.status || "Scrutiny Pending"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                        <div>
+                          <strong className="text-stone-400 text-[11px] block">Allocated Case Number (CNR):</strong>
+                          {submittedPetition.cnr_number ? (
+                            <span className="font-mono text-stone-200">{submittedPetition.cnr_number}</span>
+                          ) : (
+                            <span className="text-stone-400 italic text-[11px] inline-flex items-center gap-1 mt-0.5">
+                              <Lock className="w-3 h-3 text-stone-500" />
+                              Not yet allocated (Pending scrutiny clearance)
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <strong className="text-stone-400 text-[11px] block">Dispute Category:</strong>
+                          <span className="text-stone-200">{submittedPetition.category}</span>
+                        </div>
+
+                        <div>
+                          <strong className="text-stone-400 text-[11px] block">Proposed Court / Authority:</strong>
+                          <span className="text-stone-200">{submittedPetition.suggested_court || "Requires Jurisdiction Verification"}</span>
+                        </div>
+
+                        <div>
+                          <strong className="text-stone-400 text-[11px] block">Verified Documents Attached:</strong>
+                          <span className="text-stone-200">{submittedPetition.documents_count ?? uploadedDocs.length ?? 0} document(s)</span>
+                        </div>
+                      </div>
+
+                      {/* What to Expect Next */}
+                      <div className="pt-2.5 border-t border-[#241e1a] space-y-1">
+                        <span className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold block">What Happens During Registry Scrutiny?</span>
+                        <ul className="space-y-1 text-[11px] text-stone-400 leading-relaxed">
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-amber-400 font-bold">•</span>
+                            <span><strong>Defect Audit:</strong> Registrar staff review cause of action, court fees, and jurisdiction.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-amber-400 font-bold">•</span>
+                            <span><strong>14-Day Cure Period:</strong> If defects are flagged, an objection notification is issued for rectification.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-amber-400 font-bold">•</span>
+                            <span><strong>CNR Allocation:</strong> Once passed, your permanent 16-character CNR is generated and assigned to a judge.</span>
+                          </li>
+                        </ul>
+                      </div>
                     </div>
                   )}
 
-                  <div className="pt-4 flex justify-center gap-3">
+                  {/* ACTION BUTTONS */}
+                  <div className="pt-2 flex flex-col sm:flex-row justify-center items-center gap-3">
                     <button
                       onClick={() => {
                         setActiveTab("track-case");
                         setWizardStep(1);
                       }}
-                      className="bw-btn-primary px-4 py-2 text-xs font-semibold"
+                      className="bw-btn-primary px-5 py-2.5 text-xs font-semibold flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center"
                     >
-                      View in Active Cases
+                      <Search className="w-3.5 h-3.5" />
+                      <span>Track Scrutiny Status</span>
                     </button>
                     <button
                       onClick={() => {
@@ -1755,9 +1900,9 @@ export default function CitizenDashboard() {
                         setClassificationResult(null);
                         setUploadedDocs([]);
                       }}
-                      className="bw-btn-secondary px-3.5 py-2 text-xs"
+                      className="bw-btn-secondary px-4 py-2.5 text-xs flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center"
                     >
-                      File Another Grievance
+                      <span>File Another Grievance</span>
                     </button>
                   </div>
                 </div>
@@ -1773,9 +1918,9 @@ export default function CitizenDashboard() {
 
               <div className="border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 backdrop-blur-md space-y-6 shadow-xl shadow-black/40">
                 <div>
-                  <h2 className="text-base font-bold text-stone-100">My Registered Court Petitions</h2>
+                  <h2 className="text-base font-bold text-stone-100">My Lodged Petitions & E-Filings</h2>
                   <p className="text-xs text-stone-400 mt-0.5">
-                    Inspect your petition status, access digital summons, or analyze grounds of appeal under CPC Section 96.
+                    Track grievance scrutiny progress, view allocated CNRs upon defect clearance, access digital summons, or prepare grounds of appeal under CPC Section 96.
                   </p>
                 </div>
 
@@ -1818,7 +1963,16 @@ export default function CitizenDashboard() {
                         .map((p, idx) => (
                           <tr key={idx} className="hover:bg-[#1a1614] transition-colors">
                             <td className="p-3 font-mono font-medium text-stone-200">
-                              {p.cnr_number || p.id}
+                              {p.cnr_number ? (
+                                <span className="text-stone-100">{p.cnr_number}</span>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <span className="text-stone-300 font-mono text-[11px] block">{p.id}</span>
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-sans">
+                                    <Clock className="w-2.5 h-2.5" /> Scrutiny Intake (Pending CNR)
+                                  </span>
+                                </div>
+                              )}
                             </td>
                             <td className="p-3 max-w-xs truncate text-stone-300">
                               {p.description}
@@ -1826,7 +1980,13 @@ export default function CitizenDashboard() {
                             <td className="p-3 text-stone-400">{p.category}</td>
                             <td className="p-3 text-stone-300">{p.advocate_name || "Legal Aid"}</td>
                             <td className="p-3">
-                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium border border-[#38302a] bg-[#201b17] text-stone-300">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium border ${
+                                (p.status || "").toLowerCase().includes("scrutiny")
+                                  ? "border-amber-800/60 bg-amber-950/40 text-amber-300"
+                                  : (p.status || "").toLowerCase().includes("disposed")
+                                  ? "border-stone-700 bg-stone-900 text-stone-400"
+                                  : "border-[#38302a] bg-[#201b17] text-stone-300"
+                              }`}>
                                 {p.status || "Scrutiny Pending"}
                               </span>
                             </td>
