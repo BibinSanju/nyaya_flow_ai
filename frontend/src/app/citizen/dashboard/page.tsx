@@ -26,7 +26,7 @@ import {
   apiGetDocuments,
   apiTranscribeAudio,
   apiCreatePetition,
-  documentDownloadUrl,
+  openDocument,
 } from "@/utils/api";
 import AppHeader from "@/components/ui/app-header";
 import PageHeader from "@/components/ui/page-header";
@@ -1407,15 +1407,14 @@ export default function CitizenDashboard() {
                             </p>
                           </div>
                         </div>
-                        <a
-                          href={documentDownloadUrl(doc.id)}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openDocument(doc.id).catch((e) => alert(e.message))}
                           className="btn btn-secondary btn-sm shrink-0"
                         >
                           <Eye className="w-4 h-4" />
                           View
-                        </a>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -1497,7 +1496,7 @@ function StatusBadge({ status }: { status?: string }) {
   const s = (status || "Scrutiny pending").toLowerCase();
   const tone = s.includes("cnr") || s.includes("admitted") || s.includes("listed")
     ? "badge-success"
-    : s.includes("defect") || s.includes("reject")
+    : s.includes("defect") || s.includes("reject") || s.includes("returned")
     ? "badge-danger"
     : s.includes("disposed")
     ? ""

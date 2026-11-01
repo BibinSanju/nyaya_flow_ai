@@ -2,7 +2,7 @@
 
 import { useState, useRef, ChangeEvent, DragEvent } from "react";
 import { Upload, FileText, CheckCircle, AlertCircle, X, FileUp, Eye, Scan, Camera, Loader2 } from "lucide-react";
-import { apiUploadDocument, apiScanDocument, documentDownloadUrl } from "@/utils/api";
+import { apiUploadDocument, apiScanDocument, openDocument } from "@/utils/api";
 
 export interface UploadedDocRecord {
   id: string;
@@ -291,10 +291,14 @@ export default function DocumentUpload({
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <a href={documentDownloadUrl(uploadedDoc.id)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+              <button
+                type="button"
+                onClick={() => openDocument(uploadedDoc.id).catch((e) => setErrorMessage(e.message))}
+                className="btn btn-ghost btn-sm"
+              >
                 <Eye className="w-4 h-4" />
                 View
-              </a>
+              </button>
               <button type="button" onClick={handleReset} className="btn btn-secondary btn-sm">
                 Upload another
               </button>

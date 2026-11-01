@@ -12,7 +12,7 @@ interface CnrTrackerProps {
   defaultCnr?: string;
 }
 
-const SAMPLE_CNRS = ["MHPU02-004912-2026", "DLSW01-002134-2026", "KABG03-008129-2026"];
+const SAMPLE_CNRS = ["MHPU02-004912-2026"];
 
 export default function CnrTracker({ onCaseSelect, className = "", defaultCnr = "" }: CnrTrackerProps) {
   const [cnrInput, setCnrInput] = useState(defaultCnr);

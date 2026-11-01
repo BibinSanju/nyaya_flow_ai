@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiUrl } from "@/utils/api";
 import { MessageSquare, X, Send, RotateCcw, Mic, MicOff, Volume2, VolumeX, Square, Loader2 } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -347,7 +348,7 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
           formData.append("audio", blob, "voice_inquiry.webm");
           formData.append("language", "en");
 
-          const res = await fetch("/api/stt/transcribe", {
+          const res = await fetch(apiUrl("/api/stt/transcribe"), {
             method: "POST",
             body: formData,
           });
@@ -407,7 +408,7 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
         }
       } catch {}
 
-      const res = await fetch("/api/chat", {
+      const res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

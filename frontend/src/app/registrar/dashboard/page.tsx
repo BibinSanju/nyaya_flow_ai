@@ -115,8 +115,8 @@ export default function RegistrarDashboard() {
     setActionLoading("defect");
     setMessage(null);
     try {
-      await apiUpdatePetition(selected.id, { status: "Defects Raised" });
-      updateCase(selected.id, { status: "Defects Raised" });
+      await apiUpdatePetition(selected.id, { status: "Returned" });
+      updateCase(selected.id, { status: "Returned" });
       setMessage({ tone: "success", text: "Marked as defective. The filer will be asked to correct it." });
     } catch (err: any) {
       setMessage({ tone: "error", text: err?.message || "Could not update the status." });
@@ -371,6 +371,6 @@ export default function RegistrarDashboard() {
 
 function StatusBadge({ status, cnr }: { status: string; cnr: string | null }) {
   if (cnr) return <span className="badge badge-success">CNR issued</span>;
-  if (status.toLowerCase().includes("defect")) return <span className="badge badge-danger">{status}</span>;
+  if (status === "Returned") return <span className="badge badge-danger">Returned with defects</span>;
   return <span className="badge badge-warning">{status}</span>;
 }

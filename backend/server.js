@@ -3,127 +3,92 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const express = require("express");
 const cors = require("cors");
 const { getSupabaseStatus, isSupabaseConfigured } = require("./config/supabase");
+const { ensureStorageBucket } = require("./services/storageService");
 const authRoutes = require("./routes/authRoutes");
 const documentRoutes = require("./routes/documentRoutes");
 const courtRoutes = require("./routes/courtRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const sttRoutes = require("./routes/sttRoutes");
 const { errorHandler } = require("./middleware/errorMiddleware");
+const { rateLimit } = require("./middleware/rateLimit");
+const { getJwtSecret } = require("./middleware/authMiddleware");
 const EmailService = require("./services/emailService");
+
+const isProduction = process.env.NODE_ENV === "production";
+
+// Fail fast on missing production configuration
+getJwtSecret();
+if (isProduction && !isSupabaseConfigured()) {
+  console.error("[Config] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in production.");
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS setup supporting local development, configured origins, and production domains
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
-  : ["http://localhost:3000", "http://127.0.0.1:3000"];
+// Render (and most hosts) sit behind one proxy; needed for correct client IPs in rate limiting
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+// CORS: only the configured frontend origins (plus localhost during development)
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((s) => s.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+if (isProduction && allowedOrigins.length === 0) {
+  console.warn("[Config] CORS_ORIGIN is not set; allowing *.vercel.app origins. Set it to your exact frontend URL.");
+}
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow non-browser requests (curl, server-to-server, mobile)
-      if (!origin) return callback(null, true);
-
-      // Check allowed list or wildcard
-      if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      // Allow localhost & 127.0.0.1 on any port in development
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-        return callback(null, true);
-      }
-
-      // Allow Vercel preview/production deployments
-      if (/^https:\/\/.*\.vercel\.app$/.test(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(null, true);
+      if (!origin) return callback(null, true); // server-to-server, curl
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
+      if (allowedOrigins.length === 0 && /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return callback(null, true);
+      console.warn(`[CORS] Blocked request from ${origin}`);
+      return callback(null, false);
     },
-    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-user-id", "x-user-role"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
-// Lightweight IP-based rate limiter for authentication endpoints
-const ipRateLimitMap = new Map();
-const authRateLimiter = (maxRequests = 20, windowMs = 60 * 1000) => {
-  return (req, res, next) => {
-    const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
-    const now = Date.now();
-    const clientData = ipRateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
-
-    if (now > clientData.resetTime) {
-      clientData.count = 1;
-      clientData.resetTime = now + windowMs;
-    } else {
-      clientData.count += 1;
-    }
-
-    ipRateLimitMap.set(ip, clientData);
-
-    if (clientData.count > maxRequests) {
-      const waitSeconds = Math.ceil((clientData.resetTime - now) / 1000);
-      return res.status(429).json({
-        success: false,
-        error: `Too many authentication requests from this IP. Please wait ${waitSeconds} seconds before trying again.`,
-      });
-    }
-
-    next();
-  };
-};
-
-// System Health Probe
 app.get("/health", (req, res) => {
   const supaStatus = getSupabaseStatus();
+  const providers = EmailService.providerNames();
   res.json({
     status: "healthy",
-    service: "NyayaFlow Judicial Workflow Engine",
-    version: "3.0.0",
-    database: supaStatus.configured ? "Supabase Cloud (PostgreSQL Active)" : "Supabase Pending (In-Memory Ready)",
+    service: "NyayaFlow API",
+    database: supaStatus.configured ? "Supabase connected" : "Not configured (in-memory)",
     supabaseConfigured: supaStatus.configured,
-    groqAi: process.env.GROQ_API_KEY ? "Groq LLM & Whisper Active" : "Offline Judicial Copilot Active",
-    emailService: EmailService.isSmtpConfigured() ? "SMTP (Active & Configured)" : "SMTP Terminal Output Mode",
-    ocr: "Tesseract.js & PDF-Parse active",
+    groqAi: process.env.GROQ_API_KEY ? "Groq connected" : "Offline answers only",
+    emailService: providers.length ? `Configured: ${providers.join(", ")}` : "Not configured (codes printed to terminal)",
+    ocr: "Tesseract.js and pdf-parse",
     timestamp: new Date().toISOString(),
   });
 });
 
-// Mount Routes
-app.use("/api/auth", authRateLimiter(25, 60 * 1000), authRoutes);
+app.use("/api/auth", rateLimit({ max: 20, windowMs: 60 * 1000 }), authRoutes);
 app.use("/api/documents", documentRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/stt", sttRoutes);
+app.use("/api/chat", rateLimit({ max: 20, windowMs: 60 * 1000, message: "You're sending messages too quickly. Please wait a moment." }), chatRoutes);
+app.use("/api/stt", rateLimit({ max: 15, windowMs: 60 * 1000 }), sttRoutes);
 app.use("/api", courtRoutes);
 
-// 404 Handler
-app.use((req, res, next) => {
-  res.status(404).json({
-    success: false,
-    error: `Endpoint not found: ${req.method} ${req.originalUrl}`,
-  });
+app.use((req, res) => {
+  res.status(404).json({ success: false, error: `Not found: ${req.method} ${req.originalUrl}` });
 });
 
-// Centralized Error Handling Middleware
 app.use(errorHandler);
 
-// Start Server
-const server = app.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`[NyayaFlow Backend] Server running on http://127.0.0.1:${PORT}`);
-  console.log(`[Database]          ${isSupabaseConfigured() ? "Connected to Supabase Cloud (PostgreSQL)" : "Operating in In-Memory / Supabase Pending Mode"}`);
-  console.log(`[Auth Endpoints]     http://127.0.0.1:${PORT}/api/auth/send-otp`);
-  console.log(`[Document Endpoints] http://127.0.0.1:${PORT}/api/documents/upload`);
-  console.log(`[STT Endpoint]       http://127.0.0.1:${PORT}/api/stt/transcribe`);
-  console.log(`[Health Probe]       http://127.0.0.1:${PORT}/health`);
-  console.log(`======================================================\n`);
+app.listen(PORT, async () => {
+  console.log(`[NyayaFlow] API listening on port ${PORT}`);
+  console.log(`[NyayaFlow] Database: ${isSupabaseConfigured() ? "Supabase" : "in-memory (local dev)"}`);
+  console.log(`[NyayaFlow] Email: ${EmailService.providerNames().join(", ") || "not configured"}`);
+  await ensureStorageBucket();
 });
 
 module.exports = app;

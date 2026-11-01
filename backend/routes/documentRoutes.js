@@ -3,7 +3,7 @@ const router = express.Router();
 const DocumentController = require("../controllers/documentController");
 const ScanController = require("../controllers/scanController");
 const { upload } = require("../middleware/uploadMiddleware");
-const { authMiddleware, optionalAuth } = require("../middleware/authMiddleware");
+const { authMiddleware } = require("../middleware/authMiddleware");
 
 // Document management
 router.post(
@@ -14,7 +14,7 @@ router.post(
 );
 router.get("/", authMiddleware, DocumentController.getDocuments);
 router.get("/:id", authMiddleware, DocumentController.getDocumentById);
-router.get("/:id/download", optionalAuth, DocumentController.downloadDocument);
+router.get("/:id/download", authMiddleware, DocumentController.downloadDocument);
 router.delete("/:id", authMiddleware, DocumentController.deleteDocument);
 
 // Document scanning & OCR

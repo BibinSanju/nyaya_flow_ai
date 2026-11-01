@@ -11,40 +11,6 @@ const memoryPetitions = new Map();
 const memoryOrders = [];
 const memoryArchives = new Map();
 
-// Initial demo petitions for fallback
-[
-  {
-    id: "b0000000-0000-0000-0000-000000000001",
-    citizen_name: "Aditya Patil",
-    contact: "+91 98765 43210",
-    category: "Property & Land Dispute (Civil)",
-    description:
-      "Boundary wall encroachment on 7/12 land survey plot #142 in Kothrud, Pune. Seeking permanent injunction under Specific Relief Act 1963.",
-    status: "CNR Issued",
-    suggested_court: "Sub-Divisional Magistrate Court, Pune",
-    advocate_name: "Adv. Abhishek Deshmukh",
-    cnr_number: "MHPU02-004912-2026",
-    health_score: 92,
-    archival_location: "Building C, Archive Rm 12, Shelf 4, Box 19",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "b0000000-0000-0000-0000-000000000002",
-    citizen_name: "Ramesh Iyer",
-    contact: "+91 91234 56789",
-    category: "Consumer Contract Dispute",
-    description:
-      "Non-delivery of agricultural irrigation machinery after full payment advance under Consumer Protection Act 2019.",
-    status: "Scrutiny Pending",
-    suggested_court: "District Consumer Disputes Redressal Commission, Pune",
-    advocate_name: "Adv. Meera Sen",
-    cnr_number: null,
-    health_score: 88,
-    archival_location: "Court Complex A, Archive Room B, Shelf C, Box 102",
-    created_at: new Date().toISOString(),
-  },
-].forEach((p) => memoryPetitions.set(p.id, p));
-
 // Advocates Directory (queries Supabase advocate_profiles JOIN users)
 router.get("/advocates", optionalAuth, async (req, res) => {
   if (isSupabaseConfigured() && supabase) {
@@ -141,189 +107,173 @@ router.get("/advocates", optionalAuth, async (req, res) => {
   ]);
 });
 
-// Petitions Ledger (Query Supabase petitions)
-router.get("/petitions", optionalAuth, async (req, res) => {
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("petitions")
-        .select(`
-          *,
-          physical_archive_locations (
-            building,
-            floor,
-            room_number,
-            rack_number,
-            shelf_number,
-            box_number,
-            file_barcode
-          ),
-          court_orders (
-            id,
-            action_taken,
-            order_text,
-            hearing_date,
-            stage
-          )
-        `)
-        .order("created_at", { ascending: false });
+// Statuses allowed by the petitions.status check constraint
+const PETITION_STATUSES = ["Scrutiny Pending", "Registry Audited", "CNR Issued", "Hearings Active", "Disposed", "Returned"];
+const CNR_PATTERN = /^[A-Z0-9]{16}$/;
 
-      if (!error && data) {
-        return res.json(data);
-      }
-      if (error) {
-        console.warn("[CourtRoutes] Supabase fetch petitions error:", error.message);
-      }
-    } catch (err) {
-      console.warn("[CourtRoutes] Petitions fetch failed:", err.message);
+const isUuid = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ""));
+const actorId = (req) => (isUuid(req.user?.id) ? req.user.id : null);
+const useDb = () => isSupabaseConfigured() && supabase;
+
+async function audit(req, action) {
+  if (!useDb()) return;
+  const { error } = await supabase.from("audit_logs").insert({
+    user_id: actorId(req),
+    actor_name: req.user?.fullName || req.user?.email || null,
+    role: req.user?.role || null,
+    action: action.slice(0, 500),
+    ip_address: req.ip,
+    status: "Success",
+  });
+  if (error) console.warn("[Audit] Could not write audit log:", error.message);
+}
+
+// Petitions list. Citizens see only their own filings; staff, advocates and police see all.
+router.get("/petitions", requireAuth, async (req, res) => {
+  const role = req.user.role;
+
+  if (useDb()) {
+    let q = supabase
+      .from("petitions")
+      .select(`
+        *,
+        physical_archive_locations ( building, floor, room_number, rack_number, shelf_number, box_number, file_barcode ),
+        court_orders ( id, action_taken, order_text, hearing_date, stage, created_at )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (role === "citizen") {
+      if (!isUuid(req.user.id)) return res.json([]);
+      q = q.eq("citizen_id", req.user.id);
     }
+
+    const { data, error } = await q;
+    if (error) {
+      console.error("[Petitions] List failed:", error.message);
+      return res.status(500).json({ success: false, error: "Could not load petitions." });
+    }
+    // Advocates browsing requests don't need litigants' contact details
+    const rows = role === "advocate" ? data.map(({ contact, ...rest }) => rest) : data;
+    return res.json(rows);
   }
 
-  // Memory Fallback
-  res.json(Array.from(memoryPetitions.values()));
+  const all = Array.from(memoryPetitions.values());
+  res.json(role === "citizen" ? all.filter((p) => p.citizen_id === req.user.id) : all);
 });
 
 // File new petition
 router.post(
   "/petitions",
   requireAuth,
-  requireRole("citizen", "advocate", "registrar", "police", "admin"),
+  requireRole("citizen", "advocate", "registrar", "police"),
   async (req, res) => {
     const body = req.body;
-    const citizenName = body.citizen_name || body.citizenName || req.user?.fullName || "Citizen Litigant";
-    const contact = body.contact || req.user?.phone || req.user?.email || "Not Provided";
-    const category = body.category || "General Civil Law";
-    const description = body.description || "Grievance details pending.";
-    const suggestedCourt = body.suggested_court || body.suggestedCourt || "District Court";
-    const advocateName = body.advocate_name || body.advocateName || null;
-    const status = body.status || "Scrutiny Pending";
-    const language = body.language || "English";
-    const healthScore = body.health_score || body.healthScore || 90;
+    const citizenName = String(body.citizen_name || req.user?.fullName || "Litigant").slice(0, 255);
+    const contact = String(body.contact || req.user?.email || "").slice(0, 100) || null;
+    const category = String(body.category || "General Civil Law").slice(0, 255);
+    const description = String(body.description || "").trim();
+    const suggestedCourt = body.suggested_court ? String(body.suggested_court).slice(0, 255) : null;
+    const advocateName = body.advocate_name ? String(body.advocate_name).slice(0, 255) : null;
+    const language = String(body.language || "English").slice(0, 50);
 
-    // Validate petition narrative before filing
     const validation = await CaseValidationService.validateCaseNarrative(description, language);
     if (!validation.isValid) {
       return res.status(400).json({
         success: false,
         isValidCase: false,
-        error: `Cannot lodge petition: ${validation.reason}`,
+        error: `This can't be filed: ${validation.reason}`,
         detectedTopic: validation.detectedTopic,
       });
     }
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const citizenId = req.user?.id && req.user.id.length === 36 ? req.user.id : null;
-
-        const { data, error } = await supabase
-          .from("petitions")
-          .insert({
-            citizen_id: citizenId,
-            citizen_name: citizenName,
-            contact,
-            category,
-            description,
-            suggested_court: suggestedCourt,
-            advocate_name: advocateName,
-            status,
-            language,
-            health_score: healthScore,
-            ai_confidence: "95%",
-          })
-          .select()
-          .single();
-
-        if (error) {
-          console.error("[CourtRoutes] Supabase insert petition error:", error.message);
-          throw new Error(error.message);
-        }
-
-        // Log to audit_logs
-        await supabase.from("audit_logs").insert({
-          user_id: citizenId,
-          actor_name: citizenName,
-          role: req.user?.role || "citizen",
-          action: `LODGED PETITION: [${category}] ${description.slice(0, 100)}...`,
-          ip_address: req.ip || "127.0.0.1",
-          status: "Success",
-        });
-
-        return res.status(201).json({ success: true, petition: data });
-      } catch (err) {
-        console.error("[CourtRoutes] Petition save failed:", err.message);
-      }
-    }
-
-    // Memory Fallback
-    const id = "pet_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
-    const newPet = {
-      id,
+    const row = {
+      citizen_id: actorId(req),
       citizen_name: citizenName,
       contact,
       category,
       description,
       suggested_court: suggestedCourt,
       advocate_name: advocateName,
-      status,
+      status: "Scrutiny Pending",
       language,
-      health_score: healthScore,
-      cnr_number: null,
-      created_at: new Date().toISOString(),
     };
+
+    if (useDb()) {
+      const { data, error } = await supabase.from("petitions").insert(row).select().single();
+      if (error) {
+        console.error("[Petitions] Insert failed:", error.message);
+        return res.status(500).json({ success: false, error: "Could not save your petition. Please try again." });
+      }
+      await audit(req, `Filed petition ${data.id} [${category}]`);
+      return res.status(201).json({ success: true, petition: data });
+    }
+
+    const id = crypto.randomUUID();
+    const newPet = { id, ...row, citizen_id: req.user.id, cnr_number: null, created_at: new Date().toISOString() };
     memoryPetitions.set(id, newPet);
     res.status(201).json({ success: true, petition: newPet });
   }
 );
 
-// Update petition (Allocate CNR, update status, assign archival location)
+// Update petition. What each role may change:
+//   registrar: CNR number, status, archival location
+//   judge:     status
+//   advocate:  take on representation (advocate name/id)
 router.patch(
   "/petitions/:id",
   requireAuth,
-  requireRole("registrar", "judge", "advocate", "admin"),
+  requireRole("registrar", "judge", "advocate"),
   async (req, res) => {
     const { id } = req.params;
-    const updates = req.body;
+    const role = req.user.role;
+    const updates = req.body || {};
+    const payload = {};
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const payload = { updated_at: new Date().toISOString() };
-        if (updates.cnr_number !== undefined) payload.cnr_number = updates.cnr_number;
-        if (updates.status !== undefined) payload.status = updates.status;
-        if (updates.archival_location !== undefined) payload.archival_location = updates.archival_location;
-        if (updates.advocate_name !== undefined) payload.advocate_name = updates.advocate_name;
-        if (updates.health_score !== undefined) payload.health_score = updates.health_score;
-
-        const { data, error } = await supabase
-          .from("petitions")
-          .update(payload)
-          .eq("id", id)
-          .select()
-          .single();
-
-        if (!error && data) {
-          // Log audit
-          await supabase.from("audit_logs").insert({
-            user_id: req.user?.id && req.user.id.length === 36 ? req.user.id : null,
-            actor_name: req.user?.fullName || "Registry Officer",
-            role: req.user?.role || "registrar",
-            action: `UPDATED PETITION [${id}]: Status -> ${updates.status || "Unchanged"}, CNR -> ${updates.cnr_number || "Unchanged"}`,
-            ip_address: req.ip || "127.0.0.1",
-            status: "Success",
-          });
-
-          return res.json({ success: true, petition: data });
+    if (role === "registrar" || role === "admin") {
+      if (updates.cnr_number !== undefined) {
+        const cnr = String(updates.cnr_number).replace(/[-\s]/g, "").toUpperCase();
+        if (!CNR_PATTERN.test(cnr)) {
+          return res.status(400).json({ success: false, error: "A CNR has 16 letters and digits." });
         }
-      } catch (err) {
-        console.warn("[CourtRoutes] Update petition Supabase error:", err.message);
+        payload.cnr_number = String(updates.cnr_number).trim().toUpperCase();
+      }
+      if (updates.archival_location !== undefined) payload.archival_location = String(updates.archival_location).slice(0, 255);
+    }
+    if (["registrar", "judge", "admin"].includes(role) && updates.status !== undefined) {
+      if (!PETITION_STATUSES.includes(updates.status)) {
+        return res.status(400).json({ success: false, error: `Unknown status "${updates.status}".` });
+      }
+      payload.status = updates.status;
+    }
+    if (role === "advocate" || role === "admin") {
+      if (updates.advocate_name !== undefined) {
+        payload.advocate_name = String(updates.advocate_name).slice(0, 255);
+        if (role === "advocate") payload.advocate_id = actorId(req);
       }
     }
 
-    // Memory Fallback
-    const existing = memoryPetitions.get(id);
-    if (!existing) {
-      return res.status(404).json({ success: false, error: "Petition not found." });
+    if (Object.keys(payload).length === 0) {
+      return res.status(400).json({ success: false, error: "Nothing to update." });
     }
-    const merged = { ...existing, ...updates, updated_at: new Date().toISOString() };
+    payload.updated_at = new Date().toISOString();
+
+    if (useDb()) {
+      const { data, error } = await supabase.from("petitions").update(payload).eq("id", id).select().maybeSingle();
+      if (error) {
+        const duplicate = error.code === "23505";
+        console.error("[Petitions] Update failed:", error.message);
+        return res
+          .status(duplicate ? 409 : 500)
+          .json({ success: false, error: duplicate ? "That CNR number is already assigned to another case." : "Could not update the petition." });
+      }
+      if (!data) return res.status(404).json({ success: false, error: "Petition not found." });
+      await audit(req, `Updated petition ${id}: ${Object.keys(payload).filter((k) => k !== "updated_at").map((k) => `${k}=${payload[k]}`).join(", ")}`);
+      return res.json({ success: true, petition: data });
+    }
+
+    const existing = memoryPetitions.get(id);
+    if (!existing) return res.status(404).json({ success: false, error: "Petition not found." });
+    const merged = { ...existing, ...payload };
     memoryPetitions.set(id, merged);
     res.json({ success: true, petition: merged });
   }
@@ -333,96 +283,82 @@ router.patch(
 router.post(
   "/petitions/:id/archive",
   requireAuth,
-  requireRole("registrar", "admin"),
+  requireRole("registrar"),
   async (req, res) => {
     const { id } = req.params;
-    const { building, floor, room_number, rack_number, shelf_number, box_number, file_barcode } = req.body;
+    const field = (v, fallback) => (v && String(v).trim() ? String(v).trim().slice(0, 100) : fallback);
+    const loc = {
+      building: field(req.body.building, null),
+      floor: field(req.body.floor, "-"),
+      room_number: field(req.body.room_number, null),
+      rack_number: field(req.body.rack_number, "-"),
+      shelf_number: field(req.body.shelf_number, "-"),
+      box_number: field(req.body.box_number, "-"),
+    };
+    if (!loc.building || !loc.room_number) {
+      return res.status(400).json({ success: false, error: "Building and room are required." });
+    }
+    const archiveString = [loc.building, loc.room_number, loc.rack_number, loc.shelf_number, loc.box_number]
+      .filter((v) => v && v !== "-")
+      .join(", ");
 
-    const archiveString = `${building}, Floor ${floor}, Room ${room_number}, ${rack_number}, ${shelf_number}, ${box_number}`;
-
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        await supabase.from("physical_archive_locations").upsert({
+    if (useDb()) {
+      const { error } = await supabase.from("physical_archive_locations").upsert(
+        {
           petition_id: id,
-          building: building || "Court Complex A",
-          floor: floor || "Ground Floor",
-          room_number: room_number || "Record Room 1",
-          rack_number: rack_number || "Rack-01",
-          shelf_number: shelf_number || "Shelf-A",
-          box_number: box_number || "Box-01",
-          file_barcode: file_barcode || `BARCODE-${id.slice(0, 8).toUpperCase()}`,
-          logged_by: req.user?.id && req.user.id.length === 36 ? req.user.id : null,
-        });
-
-        // Also update petition record
-        await supabase
-          .from("petitions")
-          .update({ archival_location: archiveString })
-          .eq("id", id);
-
-        return res.json({ success: true, archival_location: archiveString });
-      } catch (err) {
-        console.warn("[CourtRoutes] Archive save failed:", err.message);
+          ...loc,
+          file_barcode: field(req.body.file_barcode, `FILE-${id.slice(0, 8).toUpperCase()}`),
+          logged_by: actorId(req),
+        },
+        { onConflict: "petition_id" }
+      );
+      if (error) {
+        console.error("[Archive] Save failed:", error.message);
+        return res.status(500).json({ success: false, error: "Could not save the record location." });
       }
+      await supabase.from("petitions").update({ archival_location: archiveString }).eq("id", id);
+      await audit(req, `Recorded file location for petition ${id}: ${archiveString}`);
+      return res.json({ success: true, archival_location: archiveString });
     }
 
-    memoryArchives.set(id, req.body);
+    memoryArchives.set(id, loc);
     const existing = memoryPetitions.get(id);
-    if (existing) {
-      existing.archival_location = archiveString;
-      memoryPetitions.set(id, existing);
-    }
+    if (existing) memoryPetitions.set(id, { ...existing, archival_location: archiveString });
     res.json({ success: true, archival_location: archiveString });
   }
 );
 
-// Record Judicial Order / Decree (Judge)
+// Record a court order (Judge)
 router.post(
   "/petitions/:id/order",
   requireAuth,
-  requireRole("judge", "admin"),
+  requireRole("judge"),
   async (req, res) => {
     const { id } = req.params;
-    const { action_taken, order_text, stage = "Hearing / Interim Order" } = req.body;
+    const { action_taken, order_text, stage = "Hearing" } = req.body;
 
-    if (!order_text) {
-      return res.status(400).json({ success: false, error: "Order decree text is mandatory." });
+    if (!order_text || !String(order_text).trim()) {
+      return res.status(400).json({ success: false, error: "Order text is required." });
     }
+    const action = String(action_taken || "Order passed").slice(0, 100);
+    const newStatus = action.toLowerCase().includes("dispose") ? "Disposed" : "Hearings Active";
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from("court_orders")
-          .insert({
-            petition_id: id,
-            judge_id: req.user?.id && req.user.id.length === 36 ? req.user.id : null,
-            action_taken: action_taken || "Interim Order Passed",
-            order_text,
-            stage,
-          })
-          .select()
-          .single();
-
-        if (!error && data) {
-          // Update petition status if disposed or injunction
-          const newStatus = action_taken?.toLowerCase().includes("dispose") ? "Disposed" : "Hearings Active";
-          await supabase.from("petitions").update({ status: newStatus }).eq("id", id);
-
-          return res.status(201).json({ success: true, order: data });
-        }
-      } catch (err) {
-        console.warn("[CourtRoutes] Order creation failed:", err.message);
+    if (useDb()) {
+      const { data, error } = await supabase
+        .from("court_orders")
+        .insert({ petition_id: id, judge_id: actorId(req), action_taken: action, order_text: String(order_text).trim(), stage })
+        .select()
+        .single();
+      if (error) {
+        console.error("[Orders] Insert failed:", error.message);
+        return res.status(500).json({ success: false, error: "Could not record the order." });
       }
+      await supabase.from("petitions").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", id);
+      await audit(req, `Recorded order on petition ${id}: ${action}`);
+      return res.status(201).json({ success: true, order: data });
     }
 
-    const newOrder = {
-      id: "ord_" + Date.now(),
-      petition_id: id,
-      action_taken,
-      order_text,
-      stage,
-      created_at: new Date().toISOString(),
-    };
+    const newOrder = { id: crypto.randomUUID(), petition_id: id, action_taken: action, order_text, stage, created_at: new Date().toISOString() };
     memoryOrders.push(newOrder);
     res.status(201).json({ success: true, order: newOrder });
   }
@@ -597,38 +533,6 @@ router.post(
   }
 );
 
-// Judge Case Summary (Restricted to Presiding Judges and Admin)
-router.post(
-  "/judge/case-summary",
-  requireAuth,
-  requireRole("judge", "admin"),
-  (req, res) => {
-    res.json({
-      success: true,
-      digest:
-        "Petition filed under CPC Order 39 for interim injunction against disputed boundary wall construction. Land revenue records (7/12 extract) show clear ownership demarcation in favor of petitioner.",
-      applicable_acts: [
-        "Order 39 Rules 1 & 2 CPC (Temporary Injunctions)",
-        "Specific Relief Act, 1963 Section 38",
-      ],
-      precedents: [
-        {
-          title: "State of Maharashtra v. Ramdas",
-          citation: "(2021) 4 SCC 112",
-          relevance: "Prima facie title established by revenue records warrants status quo preservation.",
-          matchScore: "94%",
-        },
-        {
-          title: "Dalpat Kumar v. Prahlad Singh",
-          citation: "(1992) 1 SCC 719",
-          relevance: "Defines the Triple Test for injunction: prima facie case, balance of convenience, and irreparable injury.",
-          matchScore: "91%",
-        },
-      ],
-    });
-  }
-);
-
 // Document Scrutiny Audit
 router.post(
   "/document/audit",
@@ -704,41 +608,44 @@ ${analysis.suggestedGrounds.map((g, idx) => `   (${String.fromCharCode(97 + idx)
 });
 
 // -------------------------------------------------------------
-// Digital Court Summons & Notice to Opposite Party Generator
+// Court summons (draft for the court to sign and seal)
 // -------------------------------------------------------------
 router.post(
   "/case/generate-summons",
   requireAuth,
-  requireRole("registrar", "judge", "advocate", "admin"),
-  (req, res) => {
-    const {
-      petition_id,
-      cnr_number = "MHPU02-004912-2026",
-      petitioner_name = "Aditya Patil",
-      opposite_party_name = "Opposite Party (Respondents)",
-      opposite_party_address = "Survey Plot No. 142/B, Kothrud, Pune, Maharashtra 411038",
-      hearing_date = "Nov 14, 2026 at 10:30 AM",
-      court_name = "Court of the Sub-Divisional Magistrate & Civil Judge, Pune",
-      cause_title = "Injunction Suit re Agricultural Boundary Encroachment",
-    } = req.body;
+  requireRole("registrar", "judge", "advocate"),
+  async (req, res) => {
+    const pick = (v) => (typeof v === "string" ? v.trim().slice(0, 300) : "");
+    const cnr_number = pick(req.body.cnr_number);
+    const petitioner_name = pick(req.body.petitioner_name);
+    const opposite_party_name = pick(req.body.opposite_party_name);
+    const opposite_party_address = pick(req.body.opposite_party_address);
+    const hearing_date = pick(req.body.hearing_date);
+    const court_name = pick(req.body.court_name);
+    const cause_title = pick(req.body.cause_title);
 
-    const noticeId = "SUMMONS-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(100 + Math.random() * 900);
-    const speedPostNo = "EM" + Math.floor(100000000 + Math.random() * 900000000) + "IN";
+    if (!cnr_number || !opposite_party_name || !opposite_party_address || !hearing_date || !court_name) {
+      return res.status(400).json({ success: false, error: "CNR, court, opposite party, address and hearing date are required." });
+    }
 
-    // Cryptographic hash for Section 63 BSA Digital Admissibility
-    const payloadForHash = `${noticeId}|${cnr_number}|${petitioner_name}|${opposite_party_name}|${hearing_date}`;
-    const digitalHashSha256 = crypto.createHash("sha256").update(payloadForHash).digest("hex");
+    const noticeId = "SUM-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
+    const fingerprint = crypto
+      .createHash("sha256")
+      .update([noticeId, cnr_number, court_name, petitioner_name, opposite_party_name, opposite_party_address, hearing_date, cause_title].join("|"))
+      .digest("hex");
 
-    const summonsData = {
+    await audit(req, `Prepared summons ${noticeId} for CNR ${cnr_number}`);
+
+    res.json({
       success: true,
       notice_id: noticeId,
       cnr_number,
-      petition_id,
+      petition_id: req.body.petition_id || null,
       court_name,
-      speed_post_tracking_no: speedPostNo,
+      speed_post_tracking_no: null,
       issued_date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
       hearing_date,
-      response_deadline: "30 Days from date of service (Order VIII Rule 1 CPC)",
+      response_deadline: "Within 30 days of service (Order VIII Rule 1, CPC)",
       parties: {
         petitioner: petitioner_name,
         opposite_party: opposite_party_name,
@@ -746,119 +653,66 @@ router.post(
       },
       cause_title,
       statutory_directive:
-        "WHEREAS the petitioner above-named has instituted a legal suit before this Court. YOU ARE HEREBY SUMMONED to appear before this Court in person or by a recognized legal practitioner on the scheduled hearing date at 10:30 AM, and to file your Written Statement of defense within 30 days of receipt hereof.",
+        "WHEREAS the petitioner named above has instituted a suit against you before this Court, you are hereby summoned to appear in person or through an advocate on the date stated below, and to file your written statement within 30 days of service of this summons.",
       consequence_of_non_appearance:
-        "TAKE NOTICE that in default of your appearance on the day before mentioned, the suit will be heard and determined ex-parte in your absence.",
-      sec_63_bsa_certificate_hash: digitalHashSha256,
-      seal_authority: "Registrar / Presiding Judicial Officer, Judicial District Pune",
-    };
-
-    res.json(summonsData);
+        "Take notice that if you do not appear on the said date, the suit may be heard and decided in your absence.",
+      sec_63_bsa_certificate_hash: fingerprint,
+      seal_authority: "Signature and seal of the court",
+    });
   }
 );
 
 // -------------------------------------------------------------
-// Public eCourts CNR Case Status & Dossier Lookup
+// Public case status lookup by CNR
 // -------------------------------------------------------------
 router.get("/case/cnr/:cnr", optionalAuth, async (req, res) => {
-  const queryCnr = req.params.cnr ? req.params.cnr.trim() : "";
-
-  // 1. Check Supabase
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("petitions")
-        .select(`
-          *,
-          physical_archive_locations (*),
-          court_orders (*)
-        `)
-        .or(`cnr_number.eq.${queryCnr},id.eq.${queryCnr}`)
-        .maybeSingle();
-
-      if (!error && data) {
-        return res.json({
-          success: true,
-          found: true,
-          dossier: {
-            id: data.id,
-            cnr: data.cnr_number || queryCnr,
-            petitioner: data.citizen_name,
-            contact: data.contact,
-            category: data.category,
-            description: data.description,
-            suggested_court: data.suggested_court,
-            status: data.status,
-            advocate: data.advocate_name || "Self / Legal Aid Counsel",
-            filing_date: data.created_at || "Oct 20, 2026",
-            next_hearing_date: "Nov 14, 2026",
-            bench: "Court Hall 3, Presiding Bench (SDM / Civil Judge)",
-            health_score: data.health_score || 92,
-            archival_location: data.archival_location || (data.physical_archive_locations?.[0] ? `${data.physical_archive_locations[0].building}, ${data.physical_archive_locations[0].room_number}` : "Building C, Archive Rm 12"),
-            orders: data.court_orders || [],
-          },
-        });
-      }
-    } catch (e) {
-      console.warn("[CourtRoutes] CNR Supabase error:", e.message);
-    }
+  const queryCnr = String(req.params.cnr || "").trim().toUpperCase();
+  if (!/^[A-Z0-9-]{16,20}$/.test(queryCnr)) {
+    return res.status(400).json({ success: false, error: "Enter a valid 16-character CNR number." });
   }
 
-  // 2. Memory Fallback Check
-  for (const p of memoryPetitions.values()) {
-    if ((p.cnr_number && p.cnr_number.toLowerCase() === queryCnr.toLowerCase()) || p.id === queryCnr) {
-      return res.json({
-        success: true,
-        found: true,
-        dossier: {
-          id: p.id,
-          cnr: p.cnr_number || queryCnr,
-          petitioner: p.citizen_name,
-          contact: p.contact,
-          category: p.category,
-          description: p.description,
-          suggested_court: p.suggested_court,
-          status: p.status,
-          advocate: p.advocate_name,
-          filing_date: p.created_at || "Oct 20, 2026",
-          next_hearing_date: "Nov 14, 2026",
-          bench: "Court Hall 3, Presiding Bench",
-          health_score: p.health_score || 92,
-          archival_location: p.archival_location || "Building C, Archive Rm 12, Shelf 4, Box 19",
-          orders: memoryOrders.filter((o) => o.petition_id === p.id),
-        },
-      });
+  const toDossier = (p, orders, archive) => {
+    const sortedOrders = [...(orders || [])].sort((a, b) => new Date(a.hearing_date || a.created_at) - new Date(b.hearing_date || b.created_at));
+    const loc = Array.isArray(archive) ? archive[0] : archive;
+    return {
+      id: p.id,
+      cnr: p.cnr_number,
+      petitioner: p.citizen_name,
+      category: p.category,
+      description: p.description,
+      suggested_court: p.suggested_court,
+      status: p.status,
+      advocate: p.advocate_name || null,
+      filing_date: p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null,
+      next_hearing_date: null,
+      bench: null,
+      health_score: null,
+      archival_location: p.archival_location || (loc ? [loc.building, loc.room_number].filter(Boolean).join(", ") : null),
+      orders: sortedOrders.map((o) => ({
+        stage: o.action_taken || o.stage,
+        order_text: o.order_text,
+        hearing_date: o.hearing_date ? new Date(o.hearing_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null,
+      })),
+    };
+  };
+
+  if (useDb()) {
+    const { data, error } = await supabase
+      .from("petitions")
+      .select("*, physical_archive_locations (*), court_orders (*)")
+      .eq("cnr_number", queryCnr)
+      .maybeSingle();
+    if (error) {
+      console.error("[CNR] Lookup failed:", error.message);
+      return res.status(500).json({ success: false, error: "Case records are unavailable right now." });
     }
+    if (!data) return res.status(404).json({ success: false, error: "No case found with this CNR number." });
+    return res.json({ success: true, found: true, dossier: toDossier(data, data.court_orders, data.physical_archive_locations) });
   }
 
-  // 3. Fallback Synthesizer for demo CNR numbers
-  return res.json({
-    success: true,
-    found: true,
-    dossier: {
-      id: "case_" + Date.now(),
-      cnr: queryCnr || "MHPU02-004912-2026",
-      petitioner: "Aditya Patil",
-      contact: "+91 98765 43210",
-      category: "Property & Land Dispute (Civil)",
-      description: "Boundary wall encroachment on 7/12 land survey plot #142 in Kothrud, Pune. Seeking permanent injunction under Specific Relief Act 1963.",
-      suggested_court: "Sub-Divisional Magistrate Court, Pune",
-      status: "CNR Issued - Listed for Scrutiny",
-      advocate: "Adv. Abhishek Deshmukh",
-      filing_date: "Oct 20, 2026",
-      next_hearing_date: "Nov 14, 2026 at 10:30 AM",
-      bench: "Court Hall 3, Civil Judge Senior Division",
-      health_score: 94,
-      archival_location: "Building C, Archive Rm 12, Shelf 4, Box 19 (Barcode: MHPU-ARC-8921)",
-      orders: [
-        {
-          stage: "Interim Relief Notice",
-          order_text: "Notice issued to Opposite Party returnable within 30 days under CPC Order VIII Rule 1.",
-          hearing_date: "Oct 22, 2026",
-        },
-      ],
-    },
-  });
+  const p = Array.from(memoryPetitions.values()).find((x) => (x.cnr_number || "").toUpperCase() === queryCnr);
+  if (!p) return res.status(404).json({ success: false, error: "No case found with this CNR number." });
+  res.json({ success: true, found: true, dossier: toDossier(p, memoryOrders.filter((o) => o.petition_id === p.id), memoryArchives.get(p.id)) });
 });
 
 // -------------------------------------------------------------

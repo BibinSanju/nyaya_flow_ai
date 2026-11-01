@@ -77,7 +77,6 @@ export default function AdvocateDashboard() {
     try {
       await apiUpdatePetition(selected.id, {
         advocate_name: displayName || currentUser?.email || "Advocate",
-        status: "Registry Audited",
       });
       setAcceptedIds((prev) => [...prev, selected.id]);
     } catch (err: any) {

@@ -43,8 +43,8 @@ export default function AdminDashboard() {
 
   const counts = {
     total: petitions.length,
-    pending: petitions.filter((p) => !p.cnr_number && !(p.status || "").toLowerCase().includes("defect")).length,
-    defects: petitions.filter((p) => (p.status || "").toLowerCase().includes("defect")).length,
+    pending: petitions.filter((p) => !p.cnr_number && p.status !== "Returned").length,
+    defects: petitions.filter((p) => p.status === "Returned").length,
     listed: petitions.filter((p) => p.cnr_number).length,
   };
 
@@ -104,7 +104,7 @@ export default function AdminDashboard() {
           <EmptyState
             icon={ScrollText}
             title="Audit log not available yet"
-            description="Actions are recorded in the audit_logs table, but there is no API to read them yet."
+            description="Actions are recorded in the audit_logs table in Supabase. A viewer here is not built yet."
           />
         </section>
       </main>
