@@ -3,23 +3,16 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  MessageSquare,
-  X,
-  Send,
-  Sparkles,
-  User,
-  Scale,
-  RotateCcw,
-  Zap,
-  ChevronDown,
-  Mic,
-  MicOff,
-  Volume2,
-  VolumeX,
-  Square,
-  Loader2,
-} from "lucide-react";
+import { MessageSquare, X, Send, RotateCcw, Mic, MicOff, Volume2, VolumeX, Square, Loader2 } from "lucide-react";
+
+const ROLE_LABELS: Record<string, string> = {
+  citizen: "Citizen",
+  advocate: "Advocate",
+  police: "Police officer",
+  registrar: "Registry officer",
+  judge: "Judge",
+  admin: "Administrator",
+};
 
 interface Message {
   id: string;
@@ -82,17 +75,17 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
 
   const initialMessagesByRole: Record<string, string> = {
     citizen:
-      "Namaste! I am your NyayaFlow AI judicial assistant. I can guide you through filing a petition, required revenue documents (7/12 extracts, partition deeds), e-court scrutiny standards, or finding a certified advocate. How can I assist you?",
+      "Namaste. I can help you understand how to file a petition, which documents you need, or how to track your case. What would you like to know?",
     advocate:
-      "Welcome Counsel. NyayaFlow AI Legal Copilot is active. I can assist with case precedent citations, Vakalatnama filing requirements, CPC Order 39 interim injunction grounds, and statutory cross-referencing.",
+      "Hello. I can help with precedents, vakalatnama requirements, interim injunction grounds, and mapping old IPC/CrPC sections to BNS/BNSS.",
     police:
-      "Investigating Officer, NyayaFlow AI assistant is online. I can help map incident narratives to Bharatiya Nyaya Sanhita (BNS) penal sections, verify digital evidence SHA-256 hashes under Section 63 BSA, and review chargesheets.",
+      "Hello. I can suggest BNS sections for an incident, explain digital evidence requirements under Section 63 BSA, and help with chargesheet checklists.",
     registrar:
-      "Court Registrar assistant online. I can assist with document scrutiny compliance thresholds (85% baseline), duplicate petition detection, and 16-character alphanumeric CNR number allocation protocol.",
+      "Hello. I can help with scrutiny checklists, spotting duplicate filings and the CNR numbering format.",
     judge:
-      "Presiding Judicial Bench assistant active. I can help synthesize cause list briefs, analyze precedent decree relevance scores, evaluate CPC Order 39 interim relief grounds, or review order drafts.",
+      "Hello. I can summarise case briefs, find relevant precedents and help structure interim orders.",
     admin:
-      "NyayaFlow System Administrator assistant active. I can assist with platform infrastructure, telemetry, immutable audit trails, and role-based access security across stakeholder portals.",
+      "Hello. I can answer questions about access control, audit logs and system health.",
   };
 
   const suggestionsByRole: Record<string, string[]> = {
@@ -471,6 +464,10 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
     }
   };
 
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, isTyping]);
+
   const formatText = (content: string) => {
     const lines = content.split("\n");
     return lines.map((line, idx) => {
@@ -485,7 +482,7 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
       const renderedLine = parts.map((part, pIdx) => {
         if (part.startsWith("**") && part.endsWith("**")) {
           return (
-            <strong key={pIdx} className="font-semibold text-stone-100">
+            <strong key={pIdx} className="font-semibold text-ink">
               {part.slice(2, -2)}
             </strong>
           );
@@ -496,14 +493,14 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
       if (isBullet) {
         return (
           <div key={idx} className="flex items-start gap-2 my-1">
-            <span className="text-stone-400 font-bold leading-none mt-1">•</span>
-            <span className="flex-1 text-stone-300">{renderedLine}</span>
+            <span className="text-faint leading-5">•</span>
+            <span className="flex-1">{renderedLine}</span>
           </div>
         );
       }
 
       return (
-        <p key={idx} className="my-1 text-stone-300">
+        <p key={idx} className="my-1">
           {renderedLine}
         </p>
       );
@@ -512,65 +509,39 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
 
   if (!mounted) return null;
 
+  const roleLabel = ROLE_LABELS[currentRole] || "Citizen";
+
   return (
     <>
-      {/* Floating Action Pill Launcher */}
-      <div className="fixed bottom-5 right-5 z-[9999] flex flex-col items-end gap-2">
+      {!isOpen && (
         <button
-          onClick={() => setIsOpen(!isOpen)}
-          aria-label="Court Legal Assistant"
-          className="flex items-center gap-2.5 px-3.5 py-2 rounded-lg bg-[#181513] text-stone-200 border border-[#3e352f] hover:border-[#52463e] hover:bg-[#201c19] cursor-pointer shadow-lg transition-colors"
+          onClick={() => setIsOpen(true)}
+          aria-label="Open legal assistant"
+          className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 h-11 pl-3.5 pr-4 rounded-full bg-brand text-white text-sm font-medium shadow-lg shadow-black/10 hover:bg-brand-hover transition-colors cursor-pointer"
         >
-          <div className="w-6 h-6 rounded border border-[#443a33] bg-[#241e1a] text-stone-300 flex items-center justify-center">
-            {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <Scale className="w-3.5 h-3.5" />}
-          </div>
-
-          <div className="text-left hidden sm:block pr-1">
-            <span className="font-medium text-xs tracking-tight text-stone-200">
-              {isOpen ? "Close Assistant" : "Court Assistant"}
-            </span>
-            <p className="text-[10px] text-stone-400 uppercase tracking-wider">
-              {currentRole} Support
-            </p>
-          </div>
-
-          <span className="sm:hidden text-xs font-medium text-stone-300">AI</span>
+          <MessageSquare className="w-4 h-4" />
+          <span className="hidden sm:inline">Ask a question</span>
         </button>
-      </div>
+      )}
 
-      {/* Slide-Up Chat Window */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.98 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className="fixed bottom-20 right-5 w-[92vw] sm:w-[400px] max-h-[580px] h-[520px] bg-[#141210] text-stone-200 border border-[#332c28] rounded-xl z-[9999] flex flex-col shadow-2xl backdrop-blur-md overflow-hidden"
+            role="dialog"
+            aria-label="Legal assistant"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="fixed inset-x-3 bottom-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[400px] h-[min(600px,calc(100dvh-1.5rem))] bg-surface border border-line rounded-xl z-50 flex flex-col shadow-2xl shadow-black/15 overflow-hidden"
           >
             {/* Header */}
-            <div className="p-3 bg-[#181513] border-b border-[#2d2621] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded border border-[#3e352f] bg-[#221c18] text-stone-300 flex items-center justify-center">
-                  <Scale className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="font-semibold text-xs text-stone-100">
-                      Court Legal Assistant
-                    </h4>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-[#201b17] border border-[#38302a] text-[9px] text-stone-300 font-mono">
-                      Groq API
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-stone-400 uppercase tracking-wider">
-                    {currentRole} Reference Guide
-                  </p>
-                </div>
+            <div className="px-4 py-3 border-b border-line flex items-center justify-between shrink-0">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-ink">Legal assistant</h2>
+                <p className="text-xs text-muted">For {roleLabel.toLowerCase()}s · guidance, not legal advice</p>
               </div>
-
-              <div className="flex items-center gap-1">
-                {/* Voice Mode Toggle */}
+              <div className="flex items-center gap-0.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -578,23 +549,15 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
                     setAutoSpeak(next);
                     if (!next) stopSpeaking();
                   }}
-                  title={autoSpeak ? "Voice Mode ON: Auto-speaks responses" : "Voice Mode OFF: Click to auto-speak responses"}
-                  aria-label="Toggle Voice Mode"
-                  className={`p-1.5 rounded transition-colors ${
-                    autoSpeak
-                      ? "text-amber-400 bg-amber-500/10 border border-amber-500/30"
-                      : "text-stone-400 hover:text-stone-200 hover:bg-[#201b17]"
-                  }`}
+                  title={autoSpeak ? "Read replies aloud: on" : "Read replies aloud: off"}
+                  aria-label="Toggle reading replies aloud"
+                  aria-pressed={autoSpeak}
+                  className={`btn btn-ghost btn-icon ${autoSpeak ? "text-brand bg-brand-soft" : ""}`}
                 >
-                  {autoSpeak ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                  {autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                 </button>
-                <button
-                  onClick={resetChat}
-                  title="Reset conversation"
-                  aria-label="Reset conversation"
-                  className="p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-[#201b17] transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                <button onClick={resetChat} title="New conversation" aria-label="New conversation" className="btn btn-ghost btn-icon">
+                  <RotateCcw className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => {
@@ -603,187 +566,121 @@ export default function AssistantSidebar({ role = "citizen" }: { role?: string }
                     setIsOpen(false);
                   }}
                   aria-label="Close assistant"
-                  className="p-1.5 rounded text-stone-400 hover:text-stone-200 hover:bg-[#201b17] transition-colors"
+                  className="btn btn-ghost btn-icon"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Chat Messages */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-3.5 space-y-3">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex gap-2 max-w-[90%] ${
-                    msg.sender === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
-                  }`}
-                >
-                  <div
-                    className={`w-6 h-6 rounded flex items-center justify-center shrink-0 text-[10px] ${
-                      msg.sender === "user"
-                        ? "bg-[#2a2420] border border-[#443a33] text-stone-200 font-medium"
-                        : "bg-[#1c1815] border border-[#332c28] text-stone-400"
-                    }`}
-                  >
-                    {msg.sender === "user" ? <User className="w-3 h-3" /> : <Scale className="w-3 h-3" />}
-                  </div>
-                  <div
-                    className={`p-2.5 rounded-lg text-xs leading-relaxed text-left ${
-                      msg.sender === "user"
-                        ? "bg-[#26201c] border border-[#3e352f] text-stone-100"
-                        : "bg-[#181513] border border-[#2d2621] text-stone-300"
-                    }`}
-                  >
-                    <div>{formatText(msg.text)}</div>
-                    <div className="flex items-center justify-between gap-2 mt-1.5 pt-1 border-t border-[#2d2621] text-[9px] text-stone-400">
-                      <div className="flex items-center gap-2">
-                        {msg.model && (
-                          <span className="font-mono text-stone-400">{msg.model}</span>
-                        )}
-                        {msg.sender === "ai" && (
-                          <button
-                            type="button"
-                            onClick={() => speakText(msg.text, msg.id)}
-                            title={speakingMsgId === msg.id ? "Stop voice" : "Read answer aloud"}
-                            className={`inline-flex items-center gap-1 px-1 py-0.5 rounded transition-colors ${
-                              speakingMsgId === msg.id
-                                ? "text-amber-400 bg-amber-500/10 font-semibold"
-                                : "text-stone-400 hover:text-stone-200"
-                            }`}
-                          >
-                            {speakingMsgId === msg.id ? (
-                              <>
-                                <Square className="w-2.5 h-2.5 fill-current" />
-                                <span>Speaking...</span>
-                              </>
-                            ) : (
-                              <Volume2 className="w-2.5 h-2.5" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                      <span>{msg.timestamp}</span>
+            {/* Messages */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-canvas">
+              {messages.map((msg) =>
+                msg.sender === "user" ? (
+                  <div key={msg.id} className="flex justify-end">
+                    <div className="max-w-[85%] rounded-lg rounded-br-sm bg-brand text-white px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap">
+                      {msg.text}
                     </div>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div key={msg.id} className="max-w-[92%]">
+                    <div className="rounded-lg rounded-bl-sm bg-surface border border-line px-3 py-2 text-sm leading-relaxed text-ink-2">
+                      {formatText(msg.text)}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-faint">
+                      <span>{msg.timestamp}</span>
+                      <button
+                        type="button"
+                        onClick={() => speakText(msg.text, msg.id)}
+                        className={`inline-flex items-center gap-1 hover:text-ink cursor-pointer ${speakingMsgId === msg.id ? "text-brand" : ""}`}
+                      >
+                        {speakingMsgId === msg.id ? <Square className="w-3 h-3 fill-current" /> : <Volume2 className="w-3 h-3" />}
+                        {speakingMsgId === msg.id ? "Stop" : "Listen"}
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
 
               {isTyping && (
-                <div className="flex gap-2 max-w-[80%] mr-auto">
-                  <div className="w-6 h-6 rounded bg-[#1c1815] border border-[#332c28] text-stone-400 flex items-center justify-center">
-                    <Scale className="w-3 h-3" />
-                  </div>
-                  <div className="bg-[#181513] border border-[#2d2621] p-2.5 rounded-lg flex items-center gap-2">
-                    <span className="text-xs text-stone-400">Processing legal inquiry...</span>
-                    <div className="flex gap-1 items-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce [animation-delay:150ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-stone-400 animate-bounce [animation-delay:300ms]" />
-                    </div>
-                  </div>
+                <div className="inline-flex items-center gap-2 rounded-lg bg-surface border border-line px-3 py-2 text-sm text-muted">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Thinking…
                 </div>
               )}
-            </div>
 
-            {/* Quick Suggestions */}
-            {messages.length === 1 && !isTyping && (
-              <div className="p-2.5 bg-[#161311] border-t border-[#26201c] space-y-1 shrink-0">
-                <p className="text-[10px] text-stone-400 font-medium uppercase tracking-wider text-left pl-0.5">
-                  Suggested Inquiries ({currentRole})
-                </p>
-                <div className="flex flex-col gap-1">
+              {messages.length === 1 && !isTyping && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-xs font-medium text-muted">Common questions</p>
                   {(suggestionsByRole[currentRole] || suggestionsByRole.citizen).map((sug) => (
                     <button
                       key={sug}
                       onClick={() => handleSend(sug)}
-                      className="w-full p-2 rounded bg-[#1c1815] border border-[#2d2621] hover:border-[#443a33] hover:bg-[#221c18] text-[11px] text-stone-300 text-left transition-colors cursor-pointer truncate"
+                      className="block w-full text-left px-3 py-2 rounded-md border border-line bg-surface hover:border-line-strong text-sm text-ink-2 cursor-pointer"
                     >
                       {sug}
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Voice Notice Toast */}
             {voiceNotice && (
-              <div className="px-3 py-1 bg-amber-950/40 border-t border-amber-500/30 text-[11px] text-amber-300 flex items-center justify-between">
+              <div className="px-4 py-2 border-t border-line bg-warning-soft text-xs text-warning flex items-center justify-between">
                 <span>{voiceNotice}</span>
-                <button
-                  type="button"
-                  onClick={() => setVoiceNotice(null)}
-                  className="text-stone-400 hover:text-stone-200 ml-2"
-                >
-                  ×
+                <button type="button" onClick={() => setVoiceNotice(null)} aria-label="Dismiss" className="ml-2 cursor-pointer">
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
 
-            {/* Listening Indicator Banner */}
             {isVoiceListening && (
-              <div className="px-3 py-1.5 bg-rose-950/40 border-t border-rose-500/40 text-[11px] text-rose-300 flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                </span>
-                <span className="font-medium">Voice Agent Listening... Speak your inquiry</span>
-                <button
-                  type="button"
-                  onClick={stopListening}
-                  className="ml-auto text-[10px] text-rose-400 font-mono underline hover:text-rose-200"
-                >
+              <div className="px-4 py-2 border-t border-line bg-danger-soft text-xs text-danger flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
+                <span className="font-medium">Listening…</span>
+                <button type="button" onClick={stopListening} className="ml-auto font-medium underline cursor-pointer">
                   Done
                 </button>
               </div>
             )}
 
-            {/* Input Bar */}
-            <div className="p-2.5 bg-[#181513] border-t border-[#2d2621] flex gap-2 shrink-0 items-center">
+            {/* Input */}
+            <form
+              className="p-3 border-t border-line flex gap-2 shrink-0"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (isVoiceListening) stopListening();
+                handleSend(inputVal);
+              }}
+            >
               <input
                 type="text"
-                placeholder={isVoiceListening ? "Listening..." : `Ask court assistant (${currentRole})...`}
+                placeholder={isVoiceListening ? "Listening…" : "Type your question"}
                 value={inputVal}
                 disabled={isTyping}
                 onChange={(e) => setInputVal(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    if (isVoiceListening) stopListening();
-                    handleSend(inputVal);
-                  }
-                }}
-                className="flex-1 bg-[#100e0c] border border-[#332c28] focus:border-stone-400 rounded-lg px-3 py-2 text-xs text-stone-100 placeholder:text-stone-500 focus:outline-none transition-colors disabled:opacity-50"
+                aria-label="Your question"
+                className="input flex-1"
               />
-
-              {/* Microphone Voice Agent Button */}
               <button
                 type="button"
                 onClick={toggleListening}
-                title={isVoiceListening ? "Stop voice listening" : "Speak to Voice Agent"}
-                aria-label="Voice Agent Speech Input"
-                className={`p-2 rounded-lg border transition-all flex items-center justify-center cursor-pointer shrink-0 ${
-                  isVoiceListening
-                    ? "bg-rose-950/80 text-rose-300 border-rose-500/70 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse"
-                    : "bg-[#201b17] text-stone-400 hover:text-amber-400 hover:border-[#443a33] border-[#332c28]"
-                }`}
+                title={isVoiceListening ? "Stop listening" : "Speak your question"}
+                aria-label="Voice input"
+                aria-pressed={isVoiceListening}
+                className={`btn btn-icon h-10 w-10 border ${isVoiceListening ? "border-danger text-danger bg-danger-soft" : "btn-secondary"}`}
               >
-                {isVoiceListening ? <Mic className="w-3.5 h-3.5 text-rose-400" /> : <Mic className="w-3.5 h-3.5" />}
+                {isVoiceListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
-
-              {/* Send Button */}
               <button
-                onClick={() => {
-                  if (isVoiceListening) stopListening();
-                  handleSend(inputVal);
-                }}
+                type="submit"
                 disabled={!inputVal.trim() || isTyping}
-                aria-label="Send query"
-                className="px-3 py-2 rounded-lg bg-[#26201c] hover:bg-[#302823] text-stone-200 border border-[#3e352f] flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all self-center shrink-0"
+                aria-label="Send"
+                className="btn btn-primary btn-icon h-10 w-10"
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send className="w-4 h-4" />
               </button>
-            </div>
+            </form>
           </motion.div>
         )}
       </AnimatePresence>

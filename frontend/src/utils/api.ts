@@ -451,3 +451,12 @@ export async function apiSearchStatutes(query: string) {
   return await jsonFetch(`/api/legal/statutes?q=${encodeURIComponent(query.trim())}`);
 }
 
+
+// Direct URL for viewing an uploaded document in a new tab
+export function documentDownloadUrl(id: string) {
+  return `${API_BASE_URL}/api/documents/${encodeURIComponent(id)}/download`;
+}
+
+export async function apiHealth() {
+  return await jsonFetch("/health");
+}

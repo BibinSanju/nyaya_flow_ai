@@ -1,20 +1,8 @@
 "use client";
 
 import { useState, useRef, ChangeEvent, DragEvent } from "react";
-import {
-  Upload,
-  FileText,
-  CheckCircle,
-  AlertCircle,
-  X,
-  FileUp,
-  RefreshCw,
-  Eye,
-  Trash2,
-  Scan,
-  Camera
-} from "lucide-react";
-import { apiUploadDocument, apiScanDocument, apiDeleteDocument } from "@/utils/api";
+import { Upload, FileText, CheckCircle, AlertCircle, X, FileUp, Eye, Scan, Camera, Loader2 } from "lucide-react";
+import { apiUploadDocument, apiScanDocument, documentDownloadUrl } from "@/utils/api";
 
 export interface UploadedDocRecord {
   id: string;
@@ -193,28 +181,7 @@ export default function DocumentUpload({
   };
 
   return (
-    <div className="w-full space-y-4">
-      {/* Label and Actions */}
-      <div className="flex items-center justify-between pb-2 border-b border-[#2d2621]">
-        <div>
-          <h3 className="text-sm font-semibold text-stone-100">{label}</h3>
-          <p className="text-xs text-stone-400">
-            Supported formats: PDF, JPG, JPEG, PNG (Up to 15 MB)
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => cameraInputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-[#3e352f] rounded-lg bg-[#201b17] text-stone-300 hover:bg-[#28221d] transition-colors"
-          title="Capture document using device camera"
-        >
-          <Camera className="w-3.5 h-3.5 text-stone-400" />
-          <span>Camera Scan</span>
-        </button>
-      </div>
-
-      {/* Hidden File Inputs */}
+    <div className="w-full space-y-3">
       <input
         ref={fileInputRef}
         type="file"
@@ -231,253 +198,152 @@ export default function DocumentUpload({
         className="hidden"
       />
 
-      {/* Drag & Drop Area */}
       {!selectedFile && !uploadedDoc && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label={label}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-            dragActive
-              ? "border-[#8c7a6b] bg-[#221c18]"
-              : "border-[#3e352f] hover:border-stone-400 bg-[#14110f]"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
+          className={`rounded-lg border-2 border-dashed px-6 py-8 text-center cursor-pointer transition-colors ${
+            dragActive ? "border-brand bg-brand-soft" : "border-line-strong hover:border-brand bg-subtle"
           }`}
         >
-          <div className="mx-auto w-10 h-10 rounded-full bg-[#201b17] border border-[#38302a] flex items-center justify-center mb-3">
-            <Upload className="w-5 h-5 text-stone-300" />
-          </div>
-          <p className="text-sm font-medium text-stone-200">
-            Drag and drop your file here, or{" "}
-            <span className="underline cursor-pointer text-stone-100 font-semibold">browse files</span>
+          <Upload className="w-6 h-6 text-muted mx-auto" />
+          <p className="mt-2 text-sm text-ink">
+            <span className="font-medium text-brand">Choose a file</span> or drag it here
           </p>
-          <p className="text-xs text-stone-400 mt-1">
-            Ensure documents are clear and legible for scrutiny verification
-          </p>
+          <p className="mt-1 text-xs text-muted">PDF, JPG or PNG · up to 15 MB</p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              cameraInputRef.current?.click();
+            }}
+            className="btn btn-secondary btn-sm mt-4 sm:hidden"
+          >
+            <Camera className="w-4 h-4" />
+            Take a photo
+          </button>
         </div>
       )}
 
-      {/* Selected File Card */}
       {selectedFile && !uploadedDoc && (
-        <div className="border border-[#2d2621] rounded-xl p-4 bg-[#14110f] space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded bg-[#201b17] border border-[#38302a] flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5 text-stone-300" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-medium text-stone-200 truncate max-w-xs sm:max-w-md">
-                  {selectedFile.name}
-                </p>
-                <p className="text-xs text-stone-400">
-                  {formatFileSize(selectedFile.size)} • {selectedFile.type || "Document"}
-                </p>
+        <div className="border border-line rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <FileText className="w-5 h-5 text-muted shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink truncate">{selectedFile.name}</p>
+                <p className="text-xs text-muted">{formatFileSize(selectedFile.size)}</p>
               </div>
             </div>
-
             <button
               type="button"
               onClick={handleReset}
               disabled={isUploading}
-              className="text-stone-400 hover:text-stone-200 p-1 transition-colors"
-              title="Remove file"
+              className="btn btn-ghost btn-icon"
+              aria-label="Remove file"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Progress Bar */}
           {uploadProgress !== null && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-stone-400">
-                <span>Uploading to storage...</span>
-                <span>{uploadProgress}%</span>
-              </div>
-              <div className="w-full bg-[#201b17] h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-stone-300 h-full transition-all duration-200"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
+            <div className="h-1.5 bg-subtle rounded-full overflow-hidden" role="progressbar" aria-valuenow={uploadProgress}>
+              <div className="h-full bg-brand transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
             </div>
           )}
 
-          {/* Upload Button */}
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={isUploading}
-              className="bw-btn-secondary px-3 py-1.5 text-xs"
-            >
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={handleReset} disabled={isUploading} className="btn btn-secondary btn-sm">
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={isUploading}
-              className="bw-btn-primary px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5"
-            >
-              {isUploading ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Uploading...</span>
-                </>
-              ) : (
-                <>
-                  <FileUp className="w-3.5 h-3.5" />
-                  <span>Upload Document</span>
-                </>
-              )}
+            <button type="button" onClick={handleUpload} disabled={isUploading} className="btn btn-primary btn-sm">
+              {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />}
+              {isUploading ? "Uploading…" : "Upload"}
             </button>
           </div>
         </div>
       )}
 
-      {/* Uploaded Document Card */}
       {uploadedDoc && (
-        <div className="border border-[#2d2621] rounded-xl p-4 bg-[#14110f] space-y-3">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded bg-[#201b17] border border-[#38302a] text-stone-200 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-stone-100">
-                  {uploadedDoc.originalName}
+        <div className="border border-line rounded-lg">
+          <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-8 h-8 rounded-full bg-success-soft text-success flex items-center justify-center shrink-0">
+                <CheckCircle className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink truncate">{uploadedDoc.originalName}</p>
+                <p className="text-xs text-muted">
+                  Uploaded · {formatFileSize(uploadedDoc.size)}
+                  {scanResult?.detectedDocType && ` · ${scanResult.detectedDocType}`}
                 </p>
-                <p className="text-xs text-stone-400">
-                  Document ID: <span className="font-mono text-stone-300">{uploadedDoc.id}</span> • {formatFileSize(uploadedDoc.size)}
-                </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-300 bg-[#201b17] border border-[#38302a] px-2 py-0.5 rounded">
-                    <CheckCircle className="w-3 h-3 text-stone-400" /> Stored in Archive
-                  </span>
-                  {scanResult && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-stone-300 bg-[#201b17] border border-[#38302a] px-2 py-0.5 rounded">
-                      Scanned: {scanResult.detectedDocType} ({scanResult.confidence}% match)
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <a
-                href={`/api/documents/${uploadedDoc.id}/download`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2.5 py-1 text-xs border border-[#3e352f] bg-[#201b17] rounded-lg hover:bg-[#28221d] text-stone-300 inline-flex items-center gap-1 transition-colors"
-                title="View physical file"
-              >
-                <Eye className="w-3.5 h-3.5" /> View
+            <div className="flex items-center gap-2 shrink-0">
+              <a href={documentDownloadUrl(uploadedDoc.id)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+                <Eye className="w-4 h-4" />
+                View
               </a>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-2.5 py-1 text-xs border border-[#3e352f] bg-[#201b17] rounded-lg hover:bg-[#28221d] text-stone-300 transition-colors"
-              >
-                Upload Another
+              <button type="button" onClick={handleReset} className="btn btn-secondary btn-sm">
+                Upload another
               </button>
             </div>
           </div>
 
-          {/* Action to trigger scan */}
           {!scanResult && (
-            <div className="pt-2 border-t border-[#2d2621] flex items-center justify-between">
-              <p className="text-xs text-stone-400">
-                Extract readable text, verify statutory fields, and check document health.
-              </p>
+            <div className="px-4 py-3 border-t border-line flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-subtle">
+              <p className="text-xs text-muted">Extract the text so the registry can review it faster.</p>
               <button
                 type="button"
                 onClick={() => handleTriggerScan(uploadedDoc.id)}
                 disabled={isScanning}
-                className="bw-btn-primary px-3.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5"
+                className="btn btn-secondary btn-sm"
               >
-                {isScanning ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Extracting Text...</span>
-                  </>
-                ) : (
-                  <>
-                    <Scan className="w-3.5 h-3.5" />
-                    <span>Scan & Extract Text</span>
-                  </>
-                )}
+                {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scan className="w-4 h-4" />}
+                {isScanning ? "Reading document…" : "Extract text"}
               </button>
             </div>
           )}
 
-          {/* Scan Results Review Panel */}
           {scanResult && (
-            <div className="pt-3 border-t border-[#2d2621] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-stone-200 uppercase tracking-wider">
-                  Extracted Document Information
-                </span>
-                <span className="text-xs text-stone-400">
-                  {scanResult.wordCount} words • {scanResult.characterCount} characters
-                </span>
+            <div className="px-4 py-3 border-t border-line space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span className="font-medium text-ink-2">Extracted text</span>
+                <span>{scanResult.wordCount} words</span>
               </div>
-
-              <textarea
-                rows={4}
-                value={scanResult.extractedText}
-                readOnly
-                className="w-full p-2.5 text-xs font-mono bg-[#100e0c] border border-[#2d2621] rounded-lg text-stone-200 focus:outline-none"
-              />
-
-              <div className="flex items-center justify-between text-xs text-stone-400">
-                <span>
-                  Detected Classification: <strong className="text-stone-200">{scanResult.detectedDocType}</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleTriggerScan(uploadedDoc.id)}
-                  disabled={isScanning}
-                  className="underline hover:text-stone-200 inline-flex items-center gap-1 text-stone-400"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isScanning ? "animate-spin" : ""}`} /> Retry Scan
-                </button>
-              </div>
+              <textarea rows={4} value={scanResult.extractedText} readOnly className="input font-mono text-xs bg-subtle" />
             </div>
           )}
         </div>
       )}
 
-      {/* Error Callout */}
       {errorMessage && (
-        <div className="bw-callout-error">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="callout callout-error" role="alert">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Scan Error Callout with Retry */}
       {scanError && (
-        <div className="bw-callout-error justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{scanError}</span>
-          </div>
+        <div className="callout callout-error" role="alert">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span className="flex-1">{scanError}</span>
           {uploadedDoc && (
-            <button
-              type="button"
-              onClick={() => handleTriggerScan(uploadedDoc.id)}
-              className="text-xs font-semibold underline ml-2"
-            >
+            <button type="button" onClick={() => handleTriggerScan(uploadedDoc.id)} className="font-medium underline cursor-pointer">
               Retry
             </button>
           )}
-        </div>
-      )}
-
-      {/* Success Callout */}
-      {successMessage && (
-        <div className="bw-callout-success">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{successMessage}</span>
         </div>
       )}
     </div>
