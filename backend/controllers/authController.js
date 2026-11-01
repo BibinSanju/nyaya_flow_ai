@@ -25,6 +25,15 @@ const csvEnv = (name) =>
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 
+// Police/registry/judge self sign-up: on by default in demo mode (codes shown on
+// screen), off once real email delivery is enabled. ALLOW_OFFICIAL_SIGNUP overrides.
+const officialSignupOpen = () => {
+  const flag = (process.env.ALLOW_OFFICIAL_SIGNUP || "").trim().toLowerCase();
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return (process.env.OTP_DELIVERY || "").trim().toLowerCase() !== "email";
+};
+
 /**
  * Decides whether `email` may sign in as `requestedRole`.
  * Returns { ok, role, user } or { ok: false, status, error }.
@@ -50,8 +59,11 @@ async function resolveLoginRole(email, requestedRole) {
 
   // New account
   if (PUBLIC_ROLES.includes(role)) return { ok: true, role, user: null };
-  if (role === "admin" && csvEnv("ADMIN_EMAILS").includes(email)) return { ok: true, role, user: null };
-  if (process.env.ALLOW_OFFICIAL_SIGNUP === "true") return { ok: true, role, user: null };
+  if (role === "admin") {
+    if (csvEnv("ADMIN_EMAILS").includes(email)) return { ok: true, role, user: null };
+  } else if (officialSignupOpen()) {
+    return { ok: true, role, user: null };
+  }
 
   return {
     ok: false,

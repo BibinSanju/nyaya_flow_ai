@@ -18,9 +18,9 @@ Do the steps in this order. Each takes a few minutes.
 3. Open **SQL Editor**, paste the contents of [`backend/db/security.sql`](backend/db/security.sql) and run it.
    This blocks public access to your tables and creates the private `documents` storage bucket.
    **Run it only after step 2 is in place on Render** — with the anon key the backend loses access.
-4. Create accounts for court staff (police, registry, judges) by adding rows to the `users` table
-   (Table Editor → users → Insert row), with `role` set to `police`, `registrar` or `judge`.
-   Citizens and advocates sign up on their own.
+4. In demo mode everyone can sign up for any role except Administrator. Once you switch to email
+   codes, court staff accounts (police, registry, judges) must be added to the `users` table
+   (Table Editor → users → Insert row) with `role` set to `police`, `registrar` or `judge`.
 
 ## 2. Render (backend)
 
@@ -39,7 +39,7 @@ Service → **Environment**. Set:
 
 **Delete** these if present (unused in demo mode): `SUPABASE_ANON_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `RESEND_API_KEY`.
 
-For a demo where anyone can try the police, registry and judge workspaces, also set `ALLOW_OFFICIAL_SIGNUP` = `true`. Leave it unset for real use.
+In demo mode anyone can also sign up as police, registry or judge, so every workspace can be tried. Administrator accounts are still limited to the emails in `ADMIN_EMAILS`.
 
 Save — Render redeploys. Then open `https://<your-render-app>.onrender.com/health` and check:
 - `database`: `Supabase connected`
@@ -78,5 +78,7 @@ Render's free tier blocks SMTP (Gmail/Nodemailer), so use Brevo, which sends ove
 2. **Settings → Senders → Add a sender**: add your email and click the confirmation link.
 3. **SMTP & API → API keys → Generate** and copy the key.
 4. On Render set `OTP_DELIVERY` = `email`, `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS` (the verified sender) and `EMAIL_FROM_NAME` = `NyayaFlow`.
+
+Switching to email also closes open police/registry/judge sign-up (set `ALLOW_OFFICIAL_SIGNUP=true` to keep it open).
 
 `/health` should then show `emailService`: `Email via Brevo`.
