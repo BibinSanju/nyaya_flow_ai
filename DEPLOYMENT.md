@@ -1,6 +1,8 @@
 # Deploying NyayaFlow
 
-Frontend on **Vercel**, backend on **Render**, database and file storage on **Supabase**, email via **Brevo**.
+Frontend on **Vercel**, backend on **Render**, database and file storage on **Supabase**.
+
+Sign-in runs in **demo mode** by default: the one-time code is shown on the login page and no email is sent. To send real emails later, see "Switching to email codes" at the end.
 
 Do the steps in this order. Each takes a few minutes.
 
@@ -16,19 +18,11 @@ Do the steps in this order. Each takes a few minutes.
 3. Open **SQL Editor**, paste the contents of [`backend/db/security.sql`](backend/db/security.sql) and run it.
    This blocks public access to your tables and creates the private `documents` storage bucket.
    **Run it only after step 2 is in place on Render** — with the anon key the backend loses access.
-4. Create accounts for court staff (police, registry, judges) by adding rows to the `users` table
-   (Table Editor → users → Insert row), with `role` set to `police`, `registrar` or `judge`.
-   Citizens and advocates sign up on their own.
+4. In demo mode everyone can sign up for any role except Administrator. Once you switch to email
+   codes, court staff accounts (police, registry, judges) must be added to the `users` table
+   (Table Editor → users → Insert row) with `role` set to `police`, `registrar` or `judge`.
 
-## 2. Brevo (email for sign-in codes)
-
-Render's free tier blocks email over SMTP (Gmail/Nodemailer can't work there). Brevo sends over HTTPS and needs no domain.
-
-1. Sign up at [brevo.com](https://www.brevo.com) (free: 300 emails/day).
-2. **Settings → Senders, domains & dedicated IPs → Senders → Add a sender**: add the email you want codes to come from (e.g. your Gmail) and click the confirmation link Brevo emails you.
-3. **SMTP & API → API keys → Generate a new API key**. Copy it.
-
-## 3. Render (backend)
+## 2. Render (backend)
 
 Service → **Environment**. Set:
 
@@ -40,20 +34,20 @@ Service → **Environment**. Set:
 | `SUPABASE_SERVICE_ROLE_KEY` | the **service_role** key from step 1 |
 | `CORS_ORIGIN` | your exact Vercel URL, e.g. `https://nyayaflow.vercel.app` (no trailing slash; comma-separate several) |
 | `GROQ_API_KEY` | your existing Groq key |
-| `BREVO_API_KEY` | from step 2 |
-| `EMAIL_FROM_ADDRESS` | the sender you verified in Brevo |
-| `EMAIL_FROM_NAME` | `NyayaFlow` |
+| `OTP_DELIVERY` | `screen` (demo mode: code shown on the login page) |
 | `ADMIN_EMAILS` | your own email, to create your administrator account |
 
-**Delete** these if present: `SUPABASE_ANON_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, and `RESEND_API_KEY` (unless you own a domain verified in Resend).
+**Delete** these if present (unused in demo mode): `SUPABASE_ANON_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `RESEND_API_KEY`.
+
+In demo mode anyone can also sign up as police, registry or judge, so every workspace can be tried. Administrator accounts are still limited to the emails in `ADMIN_EMAILS`.
 
 Save — Render redeploys. Then open `https://<your-render-app>.onrender.com/health` and check:
 - `database`: `Supabase connected`
-- `emailService`: `Configured: Brevo`
+- `emailService`: `Demo mode (codes shown on screen)`
 
 The logs should **not** show `Could not verify bucket "documents"`.
 
-## 4. Vercel (frontend)
+## 3. Vercel (frontend)
 
 Project → **Settings → Environment Variables**:
 
@@ -65,13 +59,26 @@ Delete `GROQ_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON
 
 Redeploy (Deployments → ⋯ → Redeploy) so the new value is built in.
 
-## 5. Check it works
+## 4. Check it works
 
-1. Open the site → **Log in** → Citizen → enter your email → **Send code**. The email should arrive within a minute (check spam the first time).
+1. Open the site → **Log in** → Citizen → enter your email → **Send code**. The code appears on the page and is filled in; click **Log in**.
 2. File a test petition and upload a PDF; open it from **Documents → View**.
 3. Sign in with your `ADMIN_EMAILS` address as **Administrator** → the System overview should show all four services as OK.
 
 ## Notes
 
 - Render's free tier sleeps after 15 minutes idle; the first request afterwards takes ~50 seconds.
-- Codes are only shown on screen when running locally without email configured. In production, if email fails, sign-in shows an error instead of revealing the code.
+- In demo mode anyone who knows an email address can sign in as that user. Switch to email codes before real use.
+
+## Switching to email codes
+
+Render's free tier blocks SMTP (Gmail/Nodemailer), so use Brevo, which sends over HTTPS and needs no domain:
+
+1. Sign up at [brevo.com](https://www.brevo.com) (free: 300 emails/day).
+2. **Settings → Senders → Add a sender**: add your email and click the confirmation link.
+3. **SMTP & API → API keys → Generate** and copy the key.
+4. On Render set `OTP_DELIVERY` = `email`, `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS` (the verified sender) and `EMAIL_FROM_NAME` = `NyayaFlow`.
+
+Switching to email also closes open police/registry/judge sign-up (set `ALLOW_OFFICIAL_SIGNUP=true` to keep it open).
+
+`/health` should then show `emailService`: `Email via Brevo`.

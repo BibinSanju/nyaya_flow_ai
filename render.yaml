@@ -22,12 +22,8 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: BREVO_API_KEY
-        sync: false
-      - key: EMAIL_FROM_ADDRESS
-        sync: false
-      - key: EMAIL_FROM_NAME
-        value: NyayaFlow
+      - key: OTP_DELIVERY
+        value: screen
       - key: ADMIN_EMAILS
         sync: false
       - key: OTP_EXPIRY_MINUTES

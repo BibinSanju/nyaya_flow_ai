@@ -66,7 +66,10 @@ app.get("/health", (req, res) => {
     database: supaStatus.configured ? "Supabase connected" : "Not configured (in-memory)",
     supabaseConfigured: supaStatus.configured,
     groqAi: process.env.GROQ_API_KEY ? "Groq connected" : "Offline answers only",
-    emailService: providers.length ? `Configured: ${providers.join(", ")}` : "Not configured (codes printed to terminal)",
+    emailService:
+      (process.env.OTP_DELIVERY || "").trim().toLowerCase() === "email"
+        ? providers.length ? `Email via ${providers.join(", ")}` : "Email selected but no provider configured"
+        : "Demo mode (codes shown on screen)",
     ocr: "Tesseract.js and pdf-parse",
     timestamp: new Date().toISOString(),
   });
@@ -87,7 +90,7 @@ app.use(errorHandler);
 app.listen(PORT, async () => {
   console.log(`[NyayaFlow] API listening on port ${PORT}`);
   console.log(`[NyayaFlow] Database: ${isSupabaseConfigured() ? "Supabase" : "in-memory (local dev)"}`);
-  console.log(`[NyayaFlow] Email: ${EmailService.providerNames().join(", ") || "not configured"}`);
+  console.log(`[NyayaFlow] Sign-in codes: ${(process.env.OTP_DELIVERY || "").trim().toLowerCase() === "email" ? `email (${EmailService.providerNames().join(", ") || "no provider!"})` : "shown on screen (demo mode)"}`);
   await ensureStorageBucket();
 });
 
