@@ -77,7 +77,7 @@ class OTPService {
       } catch (err) {
         console.error(`[OTP] Email delivery failed for ${maskEmail(email)}: ${err.message}`);
         await OTPModel.findByIdAndUpdate(record._id || record.id, { used: true });
-        throw httpError("We couldn't send the code to this email. Please check the address and try again.", 502);
+        throw httpError("We couldn't send the sign-in email right now. Please try again in a few minutes.", 502);
       }
     } else {
       // Local development only
