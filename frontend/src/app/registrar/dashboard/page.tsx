@@ -1,391 +1,376 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
-import {
-  Building2,
-  CheckCircle,
-  AlertCircle,
-  FileText,
-  Search,
-  Check,
-  ArrowRight,
-  LogOut,
-  Archive,
-  Scale,
-  RefreshCw,
-  FileBadge
-} from "lucide-react";
-import { apiListPetitions, apiUpdatePetition } from "@/utils/api";
+import { AlertCircle, CheckCircle2, FileText, Inbox, Loader2 } from "lucide-react";
+import { apiListPetitions, apiUpdatePetition, apiArchivePetition } from "@/utils/api";
 import CourtSummonsModal from "@/components/court-summons-modal";
+import AppHeader from "@/components/ui/app-header";
+import PageHeader from "@/components/ui/page-header";
+import EmptyState from "@/components/ui/empty-state";
+import { getStoredUser, type StoredUser } from "@/lib/session";
 
 interface PetitionCase {
   id: string;
   applicant: string;
+  advocate: string | null;
   type: string;
   date: string;
   summary: string;
   suggestedCourt: string;
   status: string;
   cnrNumber: string | null;
-  documents: { name: string; type: string }[];
 }
 
+const SCRUTINY_CHECKS = [
+  { id: "fee", label: "Court fee correctly computed and paid" },
+  { id: "jurisdiction", label: "Court has territorial and pecuniary jurisdiction" },
+  { id: "vakalat", label: "Vakalatnama or in-person appearance recorded" },
+  { id: "annexures", label: "Annexures are legible and complete" },
+];
+
+const EMPTY_ARCHIVE = { building: "", room: "", rack: "", shelf: "", box: "" };
+
+// 16 alphanumeric characters once separators are removed (e.g. MHPU01-004912-2026)
+const isValidCnr = (v: string) => /^[A-Z0-9]{16}$/.test(v.replace(/[-\s]/g, "").toUpperCase());
+
 export default function RegistrarDashboard() {
-  const [selectedCaseId, setSelectedCaseId] = useState("default-petition-001");
-  const [officialCnr, setOfficialCnr] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
   const [cases, setCases] = useState<PetitionCase[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [checks, setChecks] = useState<Record<string, boolean>>({});
+  const [cnrInput, setCnrInput] = useState("");
+  const [actionLoading, setActionLoading] = useState<null | "cnr" | "defect" | "archive">(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [archiveForm, setArchiveForm] = useState(EMPTY_ARCHIVE);
   const [isSummonsOpen, setIsSummonsOpen] = useState(false);
 
-  const [archiveForm, setArchiveForm] = useState({
-    building: "Court Complex A",
-    floor: "2nd Floor",
-    room: "Record Room B",
-    rack: "Rack-04",
-    shelf: "Shelf-C",
-    box: "Box-102",
-  });
-
-  const defaultCases: PetitionCase[] = [
-    {
-      id: "default-petition-001",
-      applicant: "Aditya Patil (Adv. Abhishek Deshmukh)",
-      type: "Civil Property Dispute",
-      date: "Oct 21, 2026",
-      summary: "Partition boundary dispute on agricultural survey plot #142 in Kothrud, Pune. Survey drawings attached.",
-      suggestedCourt: "Sub-Divisional Magistrate Court, Pune",
-      status: "Scrutiny Pending",
-      cnrNumber: null,
-      documents: [
-        { name: "Petition Memo.pdf", type: "Pleading" },
-        { name: "7/12 Extract Mutation.pdf", type: "Revenue Extract" },
-        { name: "Boundary Survey Map.png", type: "Annexure" }
-      ],
-    },
-  ];
-
-  const [currentUser, setCurrentUser] = useState<{ fullName?: string; email?: string } | null>(null);
-
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("nyayaflow_user");
-      if (stored) {
-        setCurrentUser(JSON.parse(stored));
-      }
-    } catch (e) {}
-
+    setCurrentUser(getStoredUser());
     const load = async () => {
       try {
         const raw = await apiListPetitions();
-        if (Array.isArray(raw) && raw.length > 0) {
-          const mapped: PetitionCase[] = raw.map((p: any) => ({
-            id: p.id || p.cnr_number,
-            applicant: p.citizen_name ? `${p.citizen_name}${p.advocate_name ? ` (${p.advocate_name})` : ""}` : "Aditya Patil",
-            type: p.category || "Property Dispute",
-            date: p.created_at ? new Date(p.created_at).toLocaleDateString() : "Oct 21, 2026",
-            summary: p.description,
-            suggestedCourt: p.suggested_court || "Subordinate Court",
-            status: p.status || "Scrutiny Pending",
-            cnrNumber: p.cnr_number || null,
-            documents: [
-              { name: "Litigant Petition Memo.pdf", type: "Pleading" },
-              { name: "7/12 Revenue Extract.pdf", type: "Revenue Proof" },
-              { name: "Survey Boundary Map.png", type: "Annexure" },
-            ],
-          }));
-          setCases(mapped);
-          setSelectedCaseId(mapped[0].id);
-          return;
-        }
-        setCases(defaultCases);
-      } catch (err) {
-        setCases(defaultCases);
+        const mapped: PetitionCase[] = (Array.isArray(raw) ? raw : []).map((p: any) => ({
+          id: p.id || p.cnr_number,
+          applicant: p.citizen_name || "Unnamed applicant",
+          advocate: p.advocate_name || null,
+          type: p.category || "General civil",
+          date: p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "",
+          summary: p.description,
+          suggestedCourt: p.suggested_court || "To be confirmed",
+          status: p.status || "Scrutiny Pending",
+          cnrNumber: p.cnr_number || null,
+        }));
+        setCases(mapped);
+        setSelectedId(mapped.find((c) => !c.cnrNumber)?.id ?? mapped[0]?.id ?? null);
+      } catch (err: any) {
+        setLoadError(err?.message || "Could not load the filing queue.");
+      } finally {
+        setLoading(false);
       }
     };
     load();
   }, []);
 
-  const selectedCase =
-    cases.find((c) => c.id === selectedCaseId) || cases[0] || defaultCases[0];
+  const selected = cases.find((c) => c.id === selectedId) || null;
+  const allChecked = SCRUTINY_CHECKS.every((c) => checks[c.id]);
+  const pending = cases.filter((c) => !c.cnrNumber).length;
 
-  const handleIssueCNR = async () => {
-    if (!officialCnr.trim()) return;
-    setActionLoading(true);
+  const selectCase = (id: string) => {
+    setSelectedId(id);
+    setChecks({});
+    setCnrInput("");
+    setArchiveForm(EMPTY_ARCHIVE);
+    setMessage(null);
+  };
 
+  const updateCase = (id: string, patch: Partial<PetitionCase>) =>
+    setCases((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+
+  const handleIssueCnr = async () => {
+    if (!selected) return;
+    const cnr = cnrInput.trim().toUpperCase();
+    if (!isValidCnr(cnr)) {
+      setMessage({ tone: "error", text: "A CNR has 16 letters and digits, e.g. MHPU01-004912-2026." });
+      return;
+    }
+    setActionLoading("cnr");
+    setMessage(null);
     try {
-      if (selectedCase.id && !selectedCase.id.startsWith("default-")) {
-        await apiUpdatePetition(selectedCase.id, {
-          cnr_number: officialCnr.trim(),
-          status: "CNR Issued",
-        });
-      }
-    } catch (e) {
-      console.warn("Update petition failed:", e);
+      await apiUpdatePetition(selected.id, { cnr_number: cnr, status: "CNR Issued" });
+      updateCase(selected.id, { cnrNumber: cnr, status: "CNR Issued" });
+      setCnrInput("");
+      setMessage({ tone: "success", text: `CNR ${cnr} issued. The case can now be listed.` });
+    } catch (err: any) {
+      setMessage({ tone: "error", text: err?.message || "Could not issue the CNR." });
+    } finally {
+      setActionLoading(null);
     }
-
-    const updated = cases.map((c) =>
-      c.id === selectedCase.id
-        ? { ...c, status: "CNR Issued", cnrNumber: officialCnr.trim() }
-        : c
-    );
-    setCases(updated);
-    setSuccessMessage(`Official CNR "${officialCnr}" assigned. Case scheduled into Cause Ledger.`);
-    setOfficialCnr("");
-    setActionLoading(false);
   };
 
-  const handleAutoFillCnr = () => {
-    setOfficialCnr("MHPU01-" + Math.floor(100000 + Math.random() * 900000) + "-2026");
+  const handleRaiseDefect = async () => {
+    if (!selected) return;
+    setActionLoading("defect");
+    setMessage(null);
+    try {
+      await apiUpdatePetition(selected.id, { status: "Returned" });
+      updateCase(selected.id, { status: "Returned" });
+      setMessage({ tone: "success", text: "Marked as defective. The filer will be asked to correct it." });
+    } catch (err: any) {
+      setMessage({ tone: "error", text: err?.message || "Could not update the status." });
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const handleOpenChat = () => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("open-nyayaflow-chat"));
+  const handleArchive = async () => {
+    if (!selected) return;
+    setActionLoading("archive");
+    setMessage(null);
+    try {
+      await apiArchivePetition(selected.id, {
+        building: archiveForm.building,
+        room_number: archiveForm.room,
+        rack_number: archiveForm.rack,
+        shelf_number: archiveForm.shelf,
+        box_number: archiveForm.box,
+      });
+      setMessage({ tone: "success", text: "Record location saved." });
+    } catch (err: any) {
+      setMessage({ tone: "error", text: err?.message || "Could not save the record location." });
+    } finally {
+      setActionLoading(null);
     }
+  };
+
+  const suggestCnr = () => {
+    const year = new Date().getFullYear();
+    setCnrInput(`MHPU01-${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}-${year}`);
   };
 
   return (
-    <div className="min-h-screen text-stone-200 flex flex-col justify-between">
-      {/* Header */}
-      <header className="border-b border-[#2d2621] sticky top-0 bg-[#12100e]/95 backdrop-blur-md z-30">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded border border-[#3e352f] bg-[#221c18] text-stone-200 flex items-center justify-center font-semibold">
-                <Building2 className="w-4 h-4 text-stone-300" />
-              </div>
-              <span className="font-semibold text-base text-stone-100 tracking-tight">NyayaFlow</span>
-            </Link>
-            <span className="text-stone-600">/</span>
-            <span className="text-xs font-medium text-stone-400 hidden sm:inline">Court Registrar Scrutiny Workspace</span>
-          </div>
+    <div className="min-h-screen flex flex-col">
+      <AppHeader workspace="Court registry" userName={currentUser?.fullName} userDetail={currentUser?.email} />
 
-          <div className="flex items-center gap-4">
-            {/* Direct AI Chat Launcher */}
-            <button
-              onClick={handleOpenChat}
-              className="px-3 py-1.5 text-xs font-medium rounded border border-[#38302a] bg-[#1c1714] text-stone-300 hover:bg-[#25201b] transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Scale className="w-3.5 h-3.5 text-stone-400" />
-              <span className="hidden sm:inline">Court Assistant</span>
-            </button>
+      <main className="container-page py-6 sm:py-8 flex-1 w-full space-y-6">
+        <PageHeader
+          title="Scrutiny queue"
+          description="Check new filings for defects, issue CNR numbers and record where the physical file is kept."
+          actions={<span className="badge badge-warning text-sm py-1 px-3">{pending} awaiting scrutiny</span>}
+        />
 
-            <div className="text-right hidden sm:block">
-              <p className="text-xs font-semibold text-stone-200">
-                {currentUser?.fullName
-                  ? (currentUser.fullName.toLowerCase().includes("registrar") ? currentUser.fullName : `Registrar ${currentUser.fullName}`)
-                  : "Registrar Clerk"}
-              </p>
-              <p className="text-[11px] text-stone-400 font-mono">{currentUser?.email || "REG-44912-DL"}</p>
-            </div>
-            <Link
-              href="/auth"
-              className="p-2 text-stone-400 hover:text-stone-200 rounded border border-[#2d2621] hover:border-[#443a33] bg-[#181513] transition-all"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Container */}
-      <div className="max-w-6xl mx-auto px-6 py-6 sm:py-8 flex-1 w-full space-y-6">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded border border-[#3e352f] bg-[#201b17] text-[11px] font-medium text-stone-300 mb-2">
-            <Building2 className="w-3 h-3 text-stone-400" />
-            <span>OCR Verification & CNR Allocation</span>
-          </div>
-          <h1 className="text-2xl font-bold text-stone-100 tracking-tight">Court Scrutiny & CNR Assignment Ledger</h1>
-          <p className="text-xs sm:text-sm text-stone-400 mt-1">
-            Audit petitions for procedural compliance, issue official Case Number Record (CNR) codes, and log physical record storage.
-          </p>
-        </div>
-
-        {successMessage && (
-          <div className="bw-callout-success">
-            <CheckCircle className="w-4 h-4 shrink-0" />
-            <span>{successMessage}</span>
+        {loadError && (
+          <div className="callout callout-error">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{loadError}</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Petitions Queue */}
-          <div className="border border-[#2e2722] rounded-xl p-5 bg-[#181513]/95 backdrop-blur-md space-y-3 shadow-xl shadow-black/40">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
-              Incoming Filing Filings ({cases.length})
-            </h2>
-
-            <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
-              {cases.map((c) => {
-                const isSelected = c.id === selectedCase.id;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedCaseId(c.id)}
-                    className={`w-full text-left p-3 rounded-lg border text-xs transition-colors cursor-pointer ${
-                      isSelected
-                        ? "border-[#6e5f54] bg-[#26201c] text-stone-100 font-semibold ring-1 ring-[#6e5f54]/40"
-                        : "border-[#2d2621] hover:border-[#443a33] bg-[#14110f] text-stone-300 hover:text-stone-100"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-stone-200">{c.id}</span>
-                      <span className="text-[11px] text-stone-500">{c.date}</span>
-                    </div>
-                    <p className="text-stone-300 mt-1 line-clamp-1">{c.applicant}</p>
-                    <p className="text-[11px] text-stone-500 mt-1">{c.type}</p>
-                    <div className="mt-2">
-                      <span className="text-[10px] bg-[#1c1815] border border-[#2d2621] text-stone-400 px-2 py-0.5 rounded font-mono">
-                        {c.status}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <section className="card overflow-hidden self-start">
+            <div className="card-header">
+              <h2 className="card-title">Filings</h2>
+              <span className="text-sm text-muted">{cases.length}</span>
             </div>
-          </div>
-
-          {/* Scrutiny Details & CNR Assignment */}
-          <div className="lg:col-span-2 border border-[#2e2722] rounded-xl p-6 sm:p-8 bg-[#181513]/95 backdrop-blur-md space-y-6 shadow-xl shadow-black/40">
-            <div className="flex items-start justify-between border-b border-[#2d2621] pb-4">
-              <div>
-                <span className="text-[11px] font-mono text-stone-400 bg-[#1c1815] border border-[#2d2621] px-2 py-0.5 rounded">
-                  {selectedCase.id}
-                </span>
-                <h2 className="text-base font-bold text-stone-100 mt-2">
-                  {selectedCase.applicant}
-                </h2>
-                <p className="text-xs text-stone-400 mt-0.5">
-                  Filing Category: {selectedCase.type} • Court: {selectedCase.suggestedCourt}
-                </p>
+            {loading ? (
+              <div className="p-10 flex justify-center text-muted">
+                <Loader2 className="w-5 h-5 animate-spin" />
               </div>
+            ) : cases.length === 0 ? (
+              <EmptyState icon={Inbox} title="Queue is empty" description="New filings will appear here." />
+            ) : (
+              <ul className="divide-y divide-line max-h-[680px] overflow-y-auto">
+                {cases.map((c) => {
+                  const active = c.id === selectedId;
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => selectCase(c.id)}
+                        aria-current={active ? "true" : undefined}
+                        className={`w-full text-left px-5 py-3 cursor-pointer border-l-2 ${
+                          active ? "bg-brand-soft border-brand" : "border-transparent hover:bg-subtle"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium text-ink truncate">{c.applicant}</span>
+                          <span className="text-xs text-muted shrink-0">{c.date}</span>
+                        </div>
+                        <p className="text-sm text-muted truncate mt-0.5">{c.type}</p>
+                        <div className="mt-1.5">
+                          <StatusBadge status={c.status} cnr={c.cnrNumber} />
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
 
-              <div className="flex flex-col items-end gap-2">
-                {selectedCase.cnrNumber ? (
-                  <span className="px-3 py-1 rounded text-xs font-mono font-medium bg-[#221c18] text-stone-200 border border-[#3e352f]">
-                    CNR: {selectedCase.cnrNumber}
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-1 rounded text-xs font-medium bg-[#201b17] text-stone-400 border border-[#332c28]">
-                    Awaiting Registrar Sign-off
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsSummonsOpen(true)}
-                  className="px-2.5 py-1 rounded bg-[#241e19] hover:bg-[#322922] border border-[#4a3d31] text-[11px] text-amber-300 font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <FileBadge className="w-3 h-3" />
-                  <span>Issue Digital Summons</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Scrutiny Checklist */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
-                Procedural Defect Scrutiny Checklist (Order 4 CPC)
-              </h3>
-              <div className="space-y-2 text-xs">
-                <div className="p-3 border border-[#2d2621] rounded-lg bg-[#14110f] flex items-center justify-between">
-                  <span className="text-stone-300">1. Court Fee Stamp Valuation & Computation</span>
-                  <span className="text-[11px] font-medium text-stone-300 bg-[#221c18] border border-[#3e352f] px-2 py-0.5 rounded">Verified</span>
-                </div>
-                <div className="p-3 border border-[#2d2621] rounded-lg bg-[#14110f] flex items-center justify-between">
-                  <span className="text-stone-300">2. Vakalatnama Authorization & Bar Council Stamp</span>
-                  <span className="text-[11px] font-medium text-stone-300 bg-[#221c18] border border-[#3e352f] px-2 py-0.5 rounded">Compliant</span>
-                </div>
-                <div className="p-3 border border-[#2d2621] rounded-lg bg-[#14110f] flex items-center justify-between">
-                  <span className="text-stone-300">3. Legibility of Revenue Annexures & Boundary Survey Maps</span>
-                  <span className="text-[11px] font-medium text-stone-300 bg-[#221c18] border border-[#3e352f] px-2 py-0.5 rounded">Certified</span>
-                </div>
-              </div>
-            </div>
-
-            {/* CNR Number Form */}
-            {!selectedCase.cnrNumber && (
-              <div className="p-4 border border-[#2d2621] rounded-lg bg-[#14110f] space-y-3">
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-200">
-                    Official CNR Allocation
-                  </h3>
-                  <p className="text-[11px] text-stone-400">
-                    Per court rules, CNR numbers must be reviewed and issued under registrar authority.
+          {selected ? (
+            <section className="card">
+              <div className="card-body border-b border-line flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold text-ink">{selected.applicant}</h2>
+                  <p className="text-sm text-muted mt-0.5">
+                    {selected.type} · {selected.suggestedCourt}
+                    {selected.advocate && ` · Counsel: ${selected.advocate}`}
                   </p>
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="text"
-                    value={officialCnr}
-                    onChange={(e) => setOfficialCnr(e.target.value)}
-                    placeholder="Enter 16-character CNR (e.g. MHPU01-004912-2026)"
-                    className="bw-input font-mono uppercase flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAutoFillCnr}
-                    className="bw-btn-secondary shrink-0 text-xs"
-                  >
-                    Generate Next In-Sequence
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleIssueCNR}
-                    disabled={actionLoading || !officialCnr.trim()}
-                    className="bw-btn-primary shrink-0 text-xs"
-                  >
-                    {actionLoading ? "Registering..." : "Issue & Register CNR"}
+                <div className="flex items-center gap-2 shrink-0">
+                  {selected.cnrNumber && <span className="kbd-code">{selected.cnrNumber}</span>}
+                  <button type="button" onClick={() => setIsSummonsOpen(true)} className="btn btn-secondary btn-sm">
+                    <FileText className="w-4 h-4" />
+                    Summons
                   </button>
                 </div>
               </div>
-            )}
 
-            {/* Physical Record Archival Tracking */}
-            <div className="space-y-3 pt-2 border-t border-[#2d2621]">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-stone-300">
-                Physical Docket Archival Tracking
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                <div className="p-2.5 border border-[#2d2621] rounded-lg bg-[#14110f]">
-                  <span className="text-stone-500 text-[10px] block">Complex</span>
-                  <span className="font-semibold text-stone-200">{archiveForm.building}</span>
+              <div className="card-body space-y-6">
+                {message && (
+                  <div className={`callout ${message.tone === "success" ? "callout-success" : "callout-error"}`} role="status">
+                    {message.tone === "success" ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                    <span>{message.text}</span>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="text-sm font-semibold text-ink mb-2">Petition</h3>
+                  <p className="text-sm text-ink-2 leading-relaxed whitespace-pre-line">{selected.summary}</p>
                 </div>
-                <div className="p-2.5 border border-[#2d2621] rounded-lg bg-[#14110f]">
-                  <span className="text-stone-500 text-[10px] block">Record Room</span>
-                  <span className="font-semibold text-stone-200">{archiveForm.room}</span>
-                </div>
-                <div className="p-2.5 border border-[#2d2621] rounded-lg bg-[#14110f]">
-                  <span className="text-stone-500 text-[10px] block">Storage Location</span>
-                  <span className="font-semibold text-stone-200">{archiveForm.rack} • {archiveForm.shelf} • {archiveForm.box}</span>
-                </div>
+
+                {!selected.cnrNumber && (
+                  <>
+                    <fieldset>
+                      <legend className="text-sm font-semibold text-ink mb-2">Scrutiny checklist</legend>
+                      <div className="border border-line rounded-lg divide-y divide-line">
+                        {SCRUTINY_CHECKS.map((item) => (
+                          <label key={item.id} className="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-2 cursor-pointer hover:bg-subtle">
+                            <input
+                              type="checkbox"
+                              checked={!!checks[item.id]}
+                              onChange={(e) => setChecks({ ...checks, [item.id]: e.target.checked })}
+                              className="accent-[var(--color-brand)]"
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+
+                    <div>
+                      <label htmlFor="cnr" className="label">CNR number</label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          id="cnr"
+                          value={cnrInput}
+                          onChange={(e) => setCnrInput(e.target.value.toUpperCase())}
+                          placeholder="MHPU01-004912-2026"
+                          className="input font-mono flex-1"
+                        />
+                        <button type="button" onClick={suggestCnr} className="btn btn-ghost">
+                          Suggest
+                        </button>
+                      </div>
+                      {!allChecked && <p className="hint">Complete the checklist before issuing a CNR.</p>}
+                    </div>
+
+                    <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleRaiseDefect}
+                        disabled={actionLoading !== null}
+                        className="btn btn-secondary"
+                      >
+                        {actionLoading === "defect" && <Loader2 className="w-4 h-4 animate-spin" />}
+                        Return with defects
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleIssueCnr}
+                        disabled={actionLoading !== null || !allChecked || !cnrInput.trim()}
+                        className="btn btn-primary"
+                      >
+                        {actionLoading === "cnr" && <Loader2 className="w-4 h-4 animate-spin" />}
+                        Issue CNR
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                <div className="divider" />
+
+                <fieldset>
+                  <legend className="text-sm font-semibold text-ink mb-1">Physical file location</legend>
+                  <p className="text-sm text-muted mb-3">Where the paper file is stored in the record room.</p>
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-5">
+                    {(
+                      [
+                        ["building", "Building"],
+                        ["room", "Room"],
+                        ["rack", "Rack"],
+                        ["shelf", "Shelf"],
+                        ["box", "Box"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key}>
+                        <label htmlFor={`ar-${key}`} className="label">{label}</label>
+                        <input
+                          id={`ar-${key}`}
+                          value={archiveForm[key]}
+                          onChange={(e) => setArchiveForm({ ...archiveForm, [key]: e.target.value })}
+                          className="input"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleArchive}
+                      disabled={actionLoading !== null || !archiveForm.building || !archiveForm.room}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      {actionLoading === "archive" && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Save location
+                    </button>
+                  </div>
+                </fieldset>
               </div>
-            </div>
-          </div>
+            </section>
+          ) : (
+            !loading && (
+              <section className="card">
+                <EmptyState icon={Inbox} title="Select a filing" description="Choose a filing from the queue to review it." />
+              </section>
+            )
+          )}
         </div>
-      </div>
+      </main>
 
-      {/* Court Summons Modal */}
-      <CourtSummonsModal
-        isOpen={isSummonsOpen}
-        onClose={() => setIsSummonsOpen(false)}
-        petition={{
-          id: selectedCase.id,
-          cnr_number: selectedCase.cnrNumber || "MHPU02-004912-2026",
-          citizen_name: selectedCase.applicant,
-          category: selectedCase.type,
-          description: selectedCase.summary,
-          suggested_court: selectedCase.suggestedCourt,
-        }}
-      />
-
-      {/* Footer */}
-      <footer className="border-t border-[#26201c] py-3.5 px-6 text-center text-xs text-stone-500 bg-[#12100e]/95 backdrop-blur-md">
-        NyayaFlow Registry Workspace • High Court Protocol & CNR Rule Compliance
-      </footer>
+      {selected && (
+        <CourtSummonsModal
+          isOpen={isSummonsOpen}
+          onClose={() => setIsSummonsOpen(false)}
+          petition={{
+            id: selected.id,
+            cnr_number: selected.cnrNumber || "",
+            citizen_name: selected.applicant,
+            category: selected.type,
+            description: selected.summary,
+            suggested_court: selected.suggestedCourt,
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function StatusBadge({ status, cnr }: { status: string; cnr: string | null }) {
+  if (cnr) return <span className="badge badge-success">CNR issued</span>;
+  if (status === "Returned") return <span className="badge badge-danger">Returned with defects</span>;
+  return <span className="badge badge-warning">{status}</span>;
 }

@@ -1,93 +1,126 @@
 const OTPService = require("../services/otpService");
 const UserModel = require("../models/User");
-const { generateToken } = require("../middleware/authMiddleware");
+const { generateToken, STAKEHOLDER_ROLES } = require("../middleware/authMiddleware");
+
+// Anyone may register for these roles. Official roles need an account created
+// by an administrator (a row in the users table with that role).
+const PUBLIC_ROLES = ["citizen", "advocate"];
+
+const GENERIC_NAMES = ["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"];
+
+const ROLE_LABELS = {
+  citizen: "citizen",
+  advocate: "advocate",
+  police: "police officer",
+  registrar: "registry officer",
+  judge: "judge",
+  admin: "administrator",
+};
+
+const csvEnv = (name) =>
+  (process.env[name] || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
+/**
+ * Decides whether `email` may sign in as `requestedRole`.
+ * Returns { ok, role, user } or { ok: false, status, error }.
+ */
+async function resolveLoginRole(email, requestedRole) {
+  const role = String(requestedRole || "citizen").toLowerCase();
+  if (!STAKEHOLDER_ROLES.includes(role)) {
+    return { ok: false, status: 400, error: "Unknown account type." };
+  }
+
+  const user = await UserModel.findOne({ email });
+
+  if (user) {
+    if (user.role !== role) {
+      return {
+        ok: false,
+        status: 403,
+        error: `This email is registered as a ${ROLE_LABELS[user.role] || user.role}. Choose that account type to sign in.`,
+      };
+    }
+    return { ok: true, role, user };
+  }
+
+  // New account
+  if (PUBLIC_ROLES.includes(role)) return { ok: true, role, user: null };
+  if (role === "admin" && csvEnv("ADMIN_EMAILS").includes(email)) return { ok: true, role, user: null };
+  if (process.env.ALLOW_OFFICIAL_SIGNUP === "true") return { ok: true, role, user: null };
+
+  return {
+    ok: false,
+    status: 403,
+    error: `There is no ${ROLE_LABELS[role]} account for this email. Official accounts are created by the system administrator.`,
+  };
+}
 
 class AuthController {
   /**
    * POST /api/auth/send-otp
    */
-  static async sendOTP(req, res, next) {
+  static async sendOTP(req, res) {
     try {
-      const { contact, type = "email", role = "citizen" } = req.body;
-
-      if (!contact || typeof contact !== "string" || contact.trim().length < 4) {
-        return res.status(400).json({
-          success: false,
-          error: "Please provide a valid contact (Email address, Phone number, or Aadhaar).",
-        });
+      const email = normalizeEmail(req.body.contact);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ success: false, error: "Enter a valid email address." });
       }
 
-      const result = await OTPService.generateAndSendOTP(contact, type, role);
+      const access = await resolveLoginRole(email, req.body.role);
+      if (!access.ok) {
+        return res.status(access.status).json({ success: false, error: access.error });
+      }
+
+      const result = await OTPService.generateAndSendOTP(email, access.role);
       return res.status(200).json(result);
     } catch (err) {
-      return res.status(400).json({
-        success: false,
-        error: err.message,
-      });
+      return res.status(err.statusCode || 400).json({ success: false, error: err.message });
     }
   }
 
   /**
    * POST /api/auth/verify-otp
    */
-  static async verifyOTP(req, res, next) {
+  static async verifyOTP(req, res) {
     try {
-      const { contact, otp, role = "citizen", fullName } = req.body;
+      const email = normalizeEmail(req.body.contact);
+      const { otp, fullName } = req.body;
 
-      if (!contact || !otp) {
-        return res.status(400).json({
-          success: false,
-          error: "Contact and 6-digit OTP are required.",
-        });
+      if (!email || !otp) {
+        return res.status(400).json({ success: false, error: "Email and 6-digit code are required." });
       }
 
-      if (String(otp).trim().length !== 6) {
-        return res.status(400).json({
-          success: false,
-          error: "OTP must be exactly 6 digits.",
-        });
+      // Re-check permission at verification time so a code cannot be reused for another role
+      const access = await resolveLoginRole(email, req.body.role);
+      if (!access.ok) {
+        return res.status(access.status).json({ success: false, error: access.error });
       }
 
-      const verification = await OTPService.verifyOTP(contact, otp);
+      await OTPService.verifyOTP(email, otp, access.role);
 
-      // Find or create user
-      let user = await UserModel.findOne({
-        $or: [{ email: contact.toLowerCase() }, { phone: contact }, { identifier: contact }],
-      });
+      const cleanName = typeof fullName === "string" ? fullName.trim().slice(0, 120) : "";
+      let user = access.user;
 
       if (!user) {
         user = await UserModel.create({
-          email: contact.includes("@") ? contact.toLowerCase() : undefined,
-          phone: !contact.includes("@") ? contact : undefined,
-          fullName: fullName && fullName.trim() ? fullName.trim() : (role === "citizen" ? "Citizen Litigant" : `Verified ${role.toUpperCase()}`),
-          role: role || verification.role || "citizen",
-          identifier: contact,
+          email,
+          fullName: cleanName || email.split("@")[0],
+          role: access.role,
           verifiedContact: true,
         });
       } else {
-        const targetRole = role || verification.role || user.role;
-        const updates = {
-          verifiedContact: true,
-          role: targetRole,
-          lastLogin: new Date(),
-        };
-
-        const isGenericName =
-          !fullName ||
-          fullName.trim() === "Citizen Litigant" ||
-          fullName.trim() === "Citizen" ||
-          fullName.trim() === "Advocate" ||
-          fullName.trim() === "Advocate Counsel" ||
-          fullName.trim() === "Authorized User" ||
-          fullName.trim().startsWith("Verified ");
-
-        // Only update user's name if they don't have one, or if they provided a genuine non-generic name
-        if (fullName && fullName.trim() && (!user.fullName || !isGenericName)) {
-          updates.fullName = fullName.trim();
-          user.fullName = fullName.trim();
+        const updates = { verifiedContact: true, lastLogin: new Date().toISOString() };
+        const hasRealName = user.fullName && !GENERIC_NAMES.includes(user.fullName);
+        if (cleanName && (!hasRealName || !GENERIC_NAMES.includes(cleanName))) {
+          updates.fullName = cleanName;
+          user.fullName = cleanName;
         }
         await UserModel.findByIdAndUpdate(user._id || user.id, updates);
-        user.role = targetRole;
       }
 
       const userId = user._id || user.id;
@@ -95,55 +128,10 @@ class AuthController {
         id: userId,
         role: user.role,
         email: user.email,
-        phone: user.phone,
+        fullName: user.fullName,
       });
 
       return res.status(200).json({
-        success: true,
-        message: "OTP verification successful.",
-        token,
-        user: {
-          id: userId,
-          fullName: user.fullName,
-          role: user.role,
-          email: user.email,
-          phone: user.phone,
-        },
-      });
-    } catch (err) {
-      return res.status(400).json({
-        success: false,
-        error: err.message,
-      });
-    }
-  }
-
-  /**
-   * POST /api/auth/register
-   */
-  static async register(req, res, next) {
-    try {
-      const { email, phone, fullName, role = "citizen", identifier } = req.body;
-
-      if (!fullName) {
-        return res.status(400).json({
-          success: false,
-          error: "Full name is required.",
-        });
-      }
-
-      const user = await UserModel.create({
-        email: email ? email.toLowerCase().trim() : undefined,
-        phone: phone ? phone.trim() : undefined,
-        fullName: fullName.trim(),
-        role,
-        identifier: identifier?.trim(),
-      });
-
-      const userId = user._id || user.id;
-      const token = generateToken({ id: userId, role: user.role });
-
-      return res.status(201).json({
         success: true,
         token,
         user: {
@@ -155,56 +143,16 @@ class AuthController {
         },
       });
     } catch (err) {
-      next(err);
-    }
-  }
-
-  /**
-   * POST /api/auth/login
-   */
-  static async login(req, res, next) {
-    try {
-      const { email, full_name, role = "citizen", phone } = req.body;
-      const lookup = email || phone || "guest@nyayaflow.gov.in";
-
-      let user = await UserModel.findOne({
-        $or: [{ email: lookup.toLowerCase() }, { phone: lookup }],
-      });
-
-      if (!user) {
-        user = await UserModel.create({
-          email: lookup.includes("@") ? lookup.toLowerCase() : `${lookup}@nyayaflow.local`,
-          phone: !lookup.includes("@") ? lookup : undefined,
-          fullName: full_name || "Authorized User",
-          role,
-        });
-      }
-
-      const userId = user._id || user.id;
-      const token = generateToken({ id: userId, role: user.role });
-
-      return res.status(200).json({
-        success: true,
-        id: userId,
-        email: user.email,
-        full_name: user.fullName,
-        role: user.role,
-        phone: user.phone,
-        token,
-      });
-    } catch (err) {
-      next(err);
+      return res.status(err.statusCode || 400).json({ success: false, error: err.message });
     }
   }
 
   /**
    * POST /api/auth/logout
+   * Sessions are stateless tokens; the client discards its token.
    */
   static async logout(req, res) {
-    return res.status(200).json({
-      success: true,
-      message: "Successfully signed out.",
-    });
+    return res.status(200).json({ success: true });
   }
 }
 

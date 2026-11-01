@@ -1,5 +1,11 @@
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const crypto = require("crypto");
 const DocumentModel = require("../models/Document");
 const ScanningService = require("../services/scanningService");
+const StorageService = require("../services/storageService");
+const { loadAuthorized } = require("./documentController");
 
 class ScanController {
   /**
@@ -8,14 +14,10 @@ class ScanController {
   static async scanDocument(req, res, next) {
     const { id } = req.params;
 
+    let tempPath = null;
     try {
-      const doc = await DocumentModel.findById(id);
-      if (!doc) {
-        return res.status(404).json({
-          success: false,
-          error: `Document with ID "${id}" was not found.`,
-        });
-      }
+      const doc = await loadAuthorized(req, res);
+      if (!doc) return;
 
       // Update status to processing
       await DocumentModel.findByIdAndUpdate(id, {
@@ -23,7 +25,11 @@ class ScanController {
       });
 
       // Execute OCR / text extraction
-      const scanOutput = await ScanningService.scanFile(doc.storagePath, doc.mimeType);
+      // The scanner works on files, so copy the stored object to a temp file
+      const buffer = await StorageService.readFile(doc.storagePath);
+      tempPath = path.join(os.tmpdir(), `nyayaflow_${crypto.randomBytes(8).toString("hex")}${path.extname(doc.filename || "")}`);
+      fs.writeFileSync(tempPath, buffer);
+      const scanOutput = await ScanningService.scanFile(tempPath, doc.mimeType);
 
       // Save scan results in database
       const updatedDoc = await DocumentModel.findByIdAndUpdate(
@@ -67,6 +73,8 @@ class ScanController {
         documentId: id,
         scanningStatus: "failed",
       });
+    } finally {
+      if (tempPath) fs.promises.unlink(tempPath).catch(() => {});
     }
   }
 
@@ -76,14 +84,8 @@ class ScanController {
   static async getScanStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const doc = await DocumentModel.findById(id);
-
-      if (!doc) {
-        return res.status(404).json({
-          success: false,
-          error: "Document not found.",
-        });
-      }
+      const doc = await loadAuthorized(req, res);
+      if (!doc) return;
 
       return res.status(200).json({
         success: true,
@@ -101,14 +103,8 @@ class ScanController {
   static async getScanResult(req, res, next) {
     try {
       const { id } = req.params;
-      const doc = await DocumentModel.findById(id);
-
-      if (!doc) {
-        return res.status(404).json({
-          success: false,
-          error: "Document not found.",
-        });
-      }
+      const doc = await loadAuthorized(req, res);
+      if (!doc) return;
 
       if (doc.scanningStatus !== "completed") {
         return res.status(200).json({

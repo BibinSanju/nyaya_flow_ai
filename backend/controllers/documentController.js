@@ -1,6 +1,39 @@
+const crypto = require("crypto");
 const path = require("path");
-const fs = require("fs");
 const DocumentModel = require("../models/Document");
+const StorageService = require("../services/storageService");
+const { isStaff } = require("../middleware/authMiddleware");
+
+const formatDoc = (d) => ({
+  id: d._id || d.id,
+  _id: d._id || d.id,
+  filename: d.filename,
+  originalName: d.originalName,
+  mimeType: d.mimeType,
+  size: d.size,
+  uploadStatus: d.uploadStatus,
+  scanningStatus: d.scanningStatus,
+  scanResult: d.scanResult,
+  createdAt: d.createdAt,
+});
+
+/** Staff and police can see every document; everyone else only their own uploads. */
+const canAccess = (user, doc) =>
+  isStaff(user) || user?.role === "police" || (doc.userId && String(doc.userId) === String(user?.id));
+
+/** Loads a document and enforces access, sending the error response itself when it fails. */
+async function loadAuthorized(req, res) {
+  const doc = await DocumentModel.findById(req.params.id);
+  if (!doc) {
+    res.status(404).json({ success: false, error: "Document not found." });
+    return null;
+  }
+  if (!canAccess(req.user, doc)) {
+    res.status(403).json({ success: false, error: "You don't have access to this document." });
+    return null;
+  }
+  return doc;
+}
 
 class DocumentController {
   /**
@@ -9,46 +42,34 @@ class DocumentController {
   static async uploadDocument(req, res, next) {
     try {
       if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          error: "No file was uploaded. Please attach a valid PDF, JPG, or PNG document.",
-        });
+        return res.status(400).json({ success: false, error: "Attach a PDF, JPG or PNG file." });
       }
 
       const file = req.file;
-      const userId = req.user?.id || req.body?.userId || "user_litigant_001";
-      const petitionId = req.body?.petitionId || null;
+      const ext = path.extname(file.originalname).toLowerCase();
+      const safeBase = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
+      const filename = `${Date.now()}_${crypto.randomBytes(6).toString("hex")}_${safeBase}${ext}`;
+      const storageKey = `${req.user.id}/${filename}`;
 
-      // Save metadata to database
-      const doc = await DocumentModel.create({
-        userId,
-        filename: file.filename,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        storagePath: file.path,
-        uploadStatus: "completed",
-        scanningStatus: "not_scanned",
-        petitionId,
-      });
+      await StorageService.saveFile(storageKey, file.buffer, file.mimetype);
 
-      const docId = doc._id || doc.id;
-
-      return res.status(201).json({
-        success: true,
-        message: "Document uploaded and stored successfully.",
-        document: {
-          id: docId,
-          _id: docId,
-          filename: doc.filename,
-          originalName: doc.originalName,
-          mimeType: doc.mimeType,
-          size: doc.size,
-          uploadStatus: doc.uploadStatus,
-          scanningStatus: doc.scanningStatus,
-          createdAt: doc.createdAt,
-        },
-      });
+      try {
+        const doc = await DocumentModel.create({
+          userId: req.user.id,
+          petitionId: req.body?.petitionId || null,
+          filename,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          storagePath: storageKey,
+          uploadStatus: "completed",
+          scanningStatus: "not_scanned",
+        });
+        return res.status(201).json({ success: true, document: formatDoc(doc) });
+      } catch (dbErr) {
+        await StorageService.deleteFile(storageKey).catch(() => {});
+        throw dbErr;
+      }
     } catch (err) {
       next(err);
     }
@@ -59,32 +80,12 @@ class DocumentController {
    */
   static async getDocuments(req, res, next) {
     try {
-      const { petitionId, userId } = req.query;
       const query = {};
-
-      if (petitionId) query.petitionId = petitionId;
-      if (userId) query.userId = userId;
+      if (req.query.petitionId) query.petitionId = req.query.petitionId;
+      if (!isStaff(req.user) && req.user.role !== "police") query.userId = req.user.id;
 
       const docs = await DocumentModel.find(query);
-
-      const formatted = docs.map((d) => ({
-        id: d._id || d.id,
-        _id: d._id || d.id,
-        filename: d.filename,
-        originalName: d.originalName,
-        mimeType: d.mimeType,
-        size: d.size,
-        uploadStatus: d.uploadStatus,
-        scanningStatus: d.scanningStatus,
-        scanResult: d.scanResult,
-        createdAt: d.createdAt,
-      }));
-
-      return res.status(200).json({
-        success: true,
-        count: formatted.length,
-        documents: formatted,
-      });
+      return res.json({ success: true, count: docs.length, documents: docs.map(formatDoc) });
     } catch (err) {
       next(err);
     }
@@ -95,32 +96,9 @@ class DocumentController {
    */
   static async getDocumentById(req, res, next) {
     try {
-      const { id } = req.params;
-      const doc = await DocumentModel.findById(id);
-
-      if (!doc) {
-        return res.status(404).json({
-          success: false,
-          error: `Document with ID "${id}" was not found.`,
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        document: {
-          id: doc._id || doc.id,
-          _id: doc._id || doc.id,
-          filename: doc.filename,
-          originalName: doc.originalName,
-          mimeType: doc.mimeType,
-          size: doc.size,
-          uploadStatus: doc.uploadStatus,
-          scanningStatus: doc.scanningStatus,
-          scanResult: doc.scanResult,
-          createdAt: doc.createdAt,
-          updatedAt: doc.updatedAt,
-        },
-      });
+      const doc = await loadAuthorized(req, res);
+      if (!doc) return;
+      return res.json({ success: true, document: formatDoc(doc) });
     } catch (err) {
       next(err);
     }
@@ -131,29 +109,14 @@ class DocumentController {
    */
   static async downloadDocument(req, res, next) {
     try {
-      const { id } = req.params;
-      const doc = await DocumentModel.findById(id);
+      const doc = await loadAuthorized(req, res);
+      if (!doc) return;
 
-      if (!doc) {
-        return res.status(404).json({
-          success: false,
-          error: "Document not found.",
-        });
-      }
-
-      if (!fs.existsSync(doc.storagePath)) {
-        return res.status(404).json({
-          success: false,
-          error: "Physical file was not found on the server storage disk.",
-        });
-      }
-
+      const buffer = await StorageService.readFile(doc.storagePath);
       res.setHeader("Content-Type", doc.mimeType);
-      res.setHeader(
-        "Content-Disposition",
-        `inline; filename="${encodeURIComponent(doc.originalName)}"`
-      );
-      return res.sendFile(path.resolve(doc.storagePath));
+      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.originalName)}"`);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(buffer);
     } catch (err) {
       next(err);
     }
@@ -164,32 +127,14 @@ class DocumentController {
    */
   static async deleteDocument(req, res, next) {
     try {
-      const { id } = req.params;
-      const doc = await DocumentModel.findById(id);
+      const doc = await loadAuthorized(req, res);
+      if (!doc) return;
 
-      if (!doc) {
-        return res.status(404).json({
-          success: false,
-          error: "Document not found.",
-        });
-      }
-
-      // Remove physical file
-      if (fs.existsSync(doc.storagePath)) {
-        try {
-          fs.unlinkSync(doc.storagePath);
-        } catch (unlinkErr) {
-          console.warn("[DELETE DOCUMENT] Warning removing file:", unlinkErr.message);
-        }
-      }
-
-      // Remove database entry
-      await DocumentModel.findByIdAndDelete(id);
-
-      return res.status(200).json({
-        success: true,
-        message: "Document deleted successfully.",
-      });
+      await StorageService.deleteFile(doc.storagePath).catch((e) =>
+        console.warn("[Documents] Could not delete stored file:", e.message)
+      );
+      await DocumentModel.findByIdAndDelete(doc.id);
+      return res.json({ success: true });
     } catch (err) {
       next(err);
     }
@@ -197,3 +142,4 @@ class DocumentController {
 }
 
 module.exports = DocumentController;
+module.exports.loadAuthorized = loadAuthorized;

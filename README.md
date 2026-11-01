@@ -294,7 +294,7 @@ nyaya_flow/
 │   ├── config/
 │   │   └── database.js       # Mongoose connection & local persistence fallback
 │   ├── controllers/
-│   │   ├── authController.js     # OTP send, verify, login, register, logout
+│   │   ├── authController.js     # OTP send, verify, logout
 │   │   ├── documentController.js # Upload, list, retrieve, stream download, delete
 │   │   └── scanController.js     # OCR scan trigger, scan-status, scan-result
 │   ├── middleware/
@@ -579,27 +579,11 @@ AI Legal Guidance
 
 ---
 
-## 🔒 Environment Variables (`backend/.env`)
+## 🔒 Environment Variables
 
-Copy `backend/.env.example` to `backend/.env`:
-```env
-PORT=5000
-JWT_SECRET=your_jwt_secret_key_here
+Copy `backend/.env.example` to `backend/.env` and `frontend/.env.example` to `frontend/.env`. Every variable is explained in those files.
 
-# Supabase PostgreSQL Cloud Database
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_ANON_KEY=your_supabase_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+For production (Vercel + Render + Supabase + Brevo email), follow [DEPLOYMENT.md](DEPLOYMENT.md).
 
-# Groq Cloud AI (LLM Chat & Whisper STT Dictation)
-GROQ_API_KEY=gsk_your_groq_api_key_here
-
-# Email OTP Delivery (Optional)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password
-EMAIL_FROM="NyayaFlow Judiciary" <no-reply@nyayaflow.gov.in>
-```
-*(If Supabase credentials are not provided, the backend seamlessly operates in in-memory mode so you can test features immediately without any local database requirements).*
+*(Locally, without Supabase credentials the backend runs in in-memory mode, and without an email provider the sign-in code is printed to the backend terminal and filled in on the login page.)*
 

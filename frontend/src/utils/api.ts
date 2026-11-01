@@ -126,47 +126,6 @@ export async function apiVerifyOTP(
   return res;
 }
 
-export async function apiAuthLogin(email: string, fullName?: string, role: string = "citizen", phone?: string) {
-  const res = await jsonFetch("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, full_name: fullName, role, phone }),
-  });
-
-  if (res.token && typeof window !== "undefined") {
-    localStorage.setItem("nyayaflow_token", res.token);
-    let existing: any = {};
-    try {
-      existing = JSON.parse(localStorage.getItem("nyayaflow_user") || "{}");
-    } catch (e) {}
-
-    const genericNames = ["Citizen", "Citizen Litigant", "Advocate", "Advocate Counsel", "Authorized User"];
-    const effectiveName =
-      res.full_name && !genericNames.includes(res.full_name)
-        ? res.full_name
-        : fullName && fullName.trim() && !genericNames.includes(fullName)
-        ? fullName.trim()
-        : existing.fullName && !genericNames.includes(existing.fullName)
-        ? existing.fullName
-        : existing.name && !genericNames.includes(existing.name)
-        ? existing.name
-        : res.full_name;
-
-    localStorage.setItem(
-      "nyayaflow_user",
-      JSON.stringify({
-        ...existing,
-        id: res.id,
-        fullName: effectiveName,
-        role: res.role || role,
-        email: res.email || email,
-        phone: res.phone || phone || existing.phone,
-      })
-    );
-  }
-
-  return res;
-}
-
 export async function apiAuthLogout() {
   if (typeof window !== "undefined") {
     localStorage.removeItem("nyayaflow_token");
@@ -299,13 +258,6 @@ export async function apiSuggestBns(incidentReport: string) {
   return await jsonFetch("/api/police/bns-suggest", {
     method: "POST",
     body: JSON.stringify({ incident_report: incidentReport }),
-  });
-}
-
-export async function apiSummarizeCase(petitionText: string, hearingsSummary?: string) {
-  return await jsonFetch("/api/judge/case-summary", {
-    method: "POST",
-    body: JSON.stringify({ petition_text: petitionText, hearings_summary: hearingsSummary }),
   });
 }
 
@@ -451,3 +403,35 @@ export async function apiSearchStatutes(query: string) {
   return await jsonFetch(`/api/legal/statutes?q=${encodeURIComponent(query.trim())}`);
 }
 
+
+// Opens an uploaded document in a new tab. Downloads need the session token,
+// so the file is fetched here and handed to the browser as a blob URL.
+export async function openDocument(id: string) {
+  const win = window.open("", "_blank");
+  try {
+    const token = localStorage.getItem("nyayaflow_token");
+    const res = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Could not open the document (HTTP ${res.status}).`);
+    }
+    const url = URL.createObjectURL(await res.blob());
+    if (win) win.location.href = url;
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    win?.close();
+    throw err;
+  }
+}
+
+export async function apiHealth() {
+  return await jsonFetch("/health");
+}
+
+// Full backend URL for a path (calls the API directly so rate limits see the real client)
+export function apiUrl(path: string) {
+  return `${API_BASE_URL}${path}`;
+}

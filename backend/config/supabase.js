@@ -3,10 +3,9 @@ const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// The backend must use the service role key: tables are protected by RLS and
+// the anon key (which is public) has no access once db/security.sql is applied.
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || (process.env.NODE_ENV === "production" ? "" : process.env.SUPABASE_ANON_KEY);
 
 let supabase = null;
 let isConfigured = false;
@@ -26,7 +25,7 @@ if (supabaseUrl && supabaseKey && !supabaseUrl.includes("your-project-url")) {
   }
 } else {
   console.warn(`[Supabase] Credentials not configured or placeholder detected.`);
-  console.warn(`[Supabase] Add SUPABASE_URL and SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY to backend/.env`);
+  console.warn(`[Supabase] Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to backend/.env`);
 }
 
 /**

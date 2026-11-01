@@ -1,255 +1,153 @@
 const nodemailer = require("nodemailer");
 
-let cachedTransporter = null;
+/*
+ * Email delivery. Providers are tried in this order, using whichever are configured:
+ *   1. Brevo   (BREVO_API_KEY)   – HTTPS API, works on Render free tier, no domain needed
+ *   2. Resend  (RESEND_API_KEY)  – HTTPS API, needs a verified domain to email other people
+ *   3. SMTP    (SMTP_HOST/USER/PASS) – local development or paid hosts; Render free blocks SMTP ports
+ *
+ * Sender: EMAIL_FROM_ADDRESS (must be a verified sender with the provider) and EMAIL_FROM_NAME.
+ */
 
-class EmailService {
-  /**
-   * Determine if production/real SMTP settings are configured in environment
-   */
-  static isSmtpConfigured() {
-    return Boolean(
-      process.env.SMTP_HOST &&
-      process.env.SMTP_HOST.trim() &&
-      process.env.SMTP_USER &&
-      process.env.SMTP_USER.trim() &&
-      process.env.SMTP_PASS &&
-      process.env.SMTP_PASS.trim()
-    );
+const env = (name) => (process.env[name] || "").trim();
+
+const senderName = () => env("EMAIL_FROM_NAME") || "NyayaFlow";
+const senderAddress = () => env("EMAIL_FROM_ADDRESS") || env("SMTP_USER");
+
+const ROLE_LABELS = {
+  citizen: "Citizen",
+  advocate: "Advocate",
+  police: "Police",
+  registrar: "Court registry",
+  judge: "Judge",
+  admin: "Administrator",
+};
+
+async function sendViaBrevo({ to, subject, html, text }) {
+  const from = senderAddress();
+  if (!from) throw new Error("EMAIL_FROM_ADDRESS is not set (use the sender email you verified in Brevo).");
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: { "api-key": env("BREVO_API_KEY"), "Content-Type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      sender: { name: senderName(), email: from },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Brevo ${response.status}: ${data.message || JSON.stringify(data)}`);
+  return { provider: "Brevo", messageId: data.messageId };
+}
+
+async function sendViaResend({ to, subject, html, text }) {
+  const from = senderAddress() ? `${senderName()} <${senderAddress()}>` : `${senderName()} <onboarding@resend.dev>`;
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env("RESEND_API_KEY")}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to: [to], subject, html, text }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Resend ${response.status}: ${data.message || JSON.stringify(data)}`);
+  return { provider: "Resend", messageId: data.id };
+}
+
+async function sendViaSmtp({ to, subject, html, text }) {
+  const port = parseInt(env("SMTP_PORT") || "465", 10);
+  const transporter = nodemailer.createTransport({
+    host: env("SMTP_HOST") || "smtp.gmail.com",
+    port,
+    secure: env("SMTP_SECURE") ? env("SMTP_SECURE") === "true" : port === 465,
+    auth: { user: env("SMTP_USER"), pass: env("SMTP_PASS").replace(/\s+/g, "") },
+    family: 4,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000,
+  });
+  // Gmail rejects mail whose From differs from the authenticated account
+  const info = await transporter.sendMail({
+    from: `"${senderName()}" <${env("SMTP_USER")}>`,
+    to,
+    subject,
+    text,
+    html,
+  });
+  if (!(info.accepted || []).map(String).map((e) => e.toLowerCase()).includes(to)) {
+    throw new Error(`SMTP server did not accept ${to}: ${info.response || "no response"}`);
   }
+  return { provider: "SMTP", messageId: info.messageId };
+}
 
-  /**
-   * Get or initialize Nodemailer transporter.
-   * Strictly enforces that unconfigured SMTP fails instead of silently simulating success.
-   */
-  static async getTransporter(customPort = null, customSecure = null) {
-    if (this.isSmtpConfigured()) {
-      const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
-      const port = customPort !== null ? customPort : parseInt(process.env.SMTP_PORT || "465", 10);
-      const secure = customSecure !== null ? customSecure : (process.env.SMTP_SECURE === "true" || port === 465);
+function configuredProviders() {
+  const list = [];
+  if (env("BREVO_API_KEY")) list.push(["Brevo", sendViaBrevo]);
+  if (env("RESEND_API_KEY")) list.push(["Resend", sendViaResend]);
+  if (env("SMTP_USER") && env("SMTP_PASS")) list.push(["SMTP", sendViaSmtp]);
+  return list;
+}
 
-      const pass = process.env.SMTP_PASS.trim();
-      // If it's a 16-letter App Password with spaces (e.g. 'xxxx xxxx xxxx xxxx'), strip whitespace
-      const cleanPass = pass.includes(" ") ? pass.replace(/\s+/g, "") : pass;
+function otpTemplate({ otp, role, expiryMinutes }) {
+  const roleLabel = ROLE_LABELS[role] || role;
+  const text = [
+    `Your NyayaFlow sign-in code is ${otp}`,
+    ``,
+    `Account type: ${roleLabel}`,
+    `The code expires in ${expiryMinutes} minutes and can be used once.`,
+    ``,
+    `If you didn't request this, you can ignore this email. Never share this code with anyone.`,
+  ].join("\n");
 
-      return nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: {
-          user: process.env.SMTP_USER.trim(),
-          pass: cleanPass,
-        },
-        family: 4, // Force IPv4 to eliminate Windows IPv6 network hanging
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 12000,
-        tls: {
-          rejectUnauthorized: process.env.NODE_ENV === "production",
-        },
-      });
-    }
-
-    // Explicit test mailer allowed ONLY if ALLOW_DEV_TEST_MAILER=true is set in testing scripts
-    if (process.env.ALLOW_DEV_TEST_MAILER === "true") {
-      const testAccount = await nodemailer.createTestAccount();
-      return nodemailer.createTransport({
-        host: "smtp.ethereal.email",
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    }
-
-    throw new Error(
-      "Real email delivery to Gmail requires SMTP_USER and a 16-character Google App Password (SMTP_PASS) configured in backend/.env. No SMTP credentials are configured. OTP could not be delivered to the recipient's Gmail inbox."
-    );
-  }
-
-  /**
-   * Send real OTP email to recipient.
-   * Strictly reports success ONLY when the provider accepts the email.
-   *
-   * @param {string} to - Recipient email address
-   * @param {string} otp - 6-digit OTP code
-   * @param {string} role - Stakeholder role
-   * @param {number} expiryMinutes - OTP validity in minutes
-   */
-  static async sendOtpEmail({ to, otp, role = "citizen", expiryMinutes = 10 }) {
-    const cleanTo = String(to || "").trim().toLowerCase();
-    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!cleanTo || !emailRegex.test(cleanTo)) {
-      throw new Error(`Invalid recipient email address format: "${to}". Please enter a valid email.`);
-    }
-
-    const transporter = await this.getTransporter();
-
-    // For Gmail SMTP, sender address MUST match the authenticated SMTP_USER to avoid SPF/DKIM rejections
-    const smtpUser = process.env.SMTP_USER ? process.env.SMTP_USER.trim() : "";
-    const fromAddress = smtpUser
-      ? `"NyayaFlow Judicial Portal" <${smtpUser}>`
-      : (process.env.EMAIL_FROM || '"NyayaFlow Judicial Portal" <no-reply@nyayaflow.gov.in>');
-
-    const roleNameMap = {
-      citizen: "Citizen Litigant",
-      advocate: "Advocate Counsel",
-      police: "Police Officer",
-      registrar: "Court Registrar",
-      judge: "Presiding Judge",
-      admin: "System Administrator",
-    };
-    const roleDisplayName = roleNameMap[role] || role.toUpperCase();
-
-    const subject = `Your NyayaFlow One-Time Password (OTP) - ${roleDisplayName}`;
-
-    const textContent = [
-      `NyayaFlow Judicial Workflow Platform`,
-      `Official One-Time Password (OTP)`,
-      ``,
-      `Stakeholder Portal: ${roleDisplayName}`,
-      `Your 6-digit verification code: ${otp}`,
-      ``,
-      `This security token is valid for ${expiryMinutes} minutes and can only be used once.`,
-      `Never share this code with anyone. Court officials and registry clerks will never ask for your OTP.`,
-      ``,
-      `If you did not request this login code, please ignore this email.`,
-    ].join("\n");
-
-    const htmlContent = `
-<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NyayaFlow Verification Code</title>
-</head>
-<body style="margin: 0; padding: 24px; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 540px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;">
-    <!-- Header -->
-    <tr>
-      <td style="padding: 24px 32px; border-bottom: 2px solid #000000; background-color: #ffffff;">
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td>
-              <span style="font-size: 18px; font-weight: 700; color: #000000; letter-spacing: -0.5px;">NyayaFlow ⚖️</span>
-              <span style="display: block; font-size: 11px; color: #666666; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px;">
-                Digital Court Case Management Platform
-              </span>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-
-    <!-- Body -->
-    <tr>
-      <td style="padding: 32px;">
-        <h1 style="margin: 0 0 12px; font-size: 18px; font-weight: 600; color: #000000;">
-          One-Time Security Verification
-        </h1>
-        <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.5; color: #333333;">
-          Use the 6-digit code below to authenticate your session for the 
-          <strong>${roleDisplayName}</strong> workspace.
-        </p>
-
-        <!-- OTP Display Box -->
-        <div style="margin: 24px 0; padding: 18px 24px; background-color: #000000; border-radius: 6px; text-align: center;">
-          <div style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 700; color: #ffffff; letter-spacing: 8px;">
-            ${otp}
-          </div>
-          <div style="margin-top: 8px; font-size: 11px; color: #cccccc; letter-spacing: 0.5px;">
-            VALID FOR ${expiryMinutes} MINUTES • SINGLE-USE TOKEN
-          </div>
-        </div>
-
-        <p style="margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: #555555;">
-          This code will expire automatically in <strong>${expiryMinutes} minutes</strong> and can only be used once. If you did not initiate this request, someone may have mistyped their identifier. No changes have been made to your account.
-        </p>
-
-        <div style="margin-top: 24px; padding: 12px 16px; background-color: #f9f9f9; border-left: 3px solid #000000; font-size: 12px; color: #444444; line-height: 1.4;">
-          <strong>Security Notice:</strong> Judicial registry officers, police personnel, and system administrators will never ask for your verification code. Never share your OTP with anyone.
-        </div>
-      </td>
-    </tr>
-
-    <!-- Footer -->
-    <tr>
-      <td style="padding: 20px 32px; background-color: #fafafa; border-top: 1px solid #eeeeee; font-size: 11px; color: #888888; text-align: center;">
-        NyayaFlow Platform • Electronic Case Management & Judicial Scrutiny Engine<br>
-        Confidential Communication • Automated Notification
-      </td>
-    </tr>
+<body style="margin:0;padding:24px;background:#f5f6f8;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto;background:#ffffff;border:1px solid #e2e5ea;border-radius:8px;">
+    <tr><td style="padding:24px 28px;border-bottom:1px solid #e2e5ea;">
+      <span style="font-family:Georgia,serif;font-size:18px;font-weight:600;color:#1d3a5f;">NyayaFlow</span>
+    </td></tr>
+    <tr><td style="padding:28px;">
+      <p style="margin:0 0 16px;font-size:15px;">Your sign-in code for the <strong>${roleLabel}</strong> workspace:</p>
+      <p style="margin:0 0 20px;font-family:'Courier New',monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#1d3a5f;">${otp}</p>
+      <p style="margin:0 0 8px;font-size:14px;color:#374151;">It expires in ${expiryMinutes} minutes and can be used once.</p>
+      <p style="margin:0;font-size:13px;color:#6b7280;">If you didn't request this, ignore this email. Court and registry staff will never ask for your code.</p>
+    </td></tr>
   </table>
 </body>
-</html>
-    `.trim();
+</html>`;
+  return { text, html };
+}
 
-    const mailOptions = {
-      from: fromAddress,
-      to: cleanTo,
-      subject,
-      text: textContent,
-      html: htmlContent,
-    };
+class EmailService {
+  static isConfigured() {
+    return configuredProviders().length > 0;
+  }
 
-    let info;
-    try {
-      info = await transporter.sendMail(mailOptions);
-    } catch (sendErr) {
-      console.warn(`[EmailService] Primary SMTP delivery attempt on port ${process.env.SMTP_PORT || "465"} failed: ${sendErr.message}. Attempting automated fallback port...`);
+  static providerNames() {
+    return configuredProviders().map(([name]) => name);
+  }
 
-      // Attempt alternate port automatically (465 SSL <-> 587 STARTTLS)
-      const currentPort = parseInt(process.env.SMTP_PORT || "465", 10);
-      const altPort = currentPort === 465 ? 587 : 465;
-      const altSecure = altPort === 465;
+  /**
+   * Sends the sign-in code, falling through providers until one accepts it.
+   */
+  static async sendOtpEmail({ to, otp, role = "citizen", expiryMinutes = 10 }) {
+    const recipient = String(to || "").trim().toLowerCase();
+    const { text, html } = otpTemplate({ otp, role, expiryMinutes });
+    const message = { to: recipient, subject: `${otp} is your NyayaFlow sign-in code`, text, html };
 
+    const errors = [];
+    for (const [name, send] of configuredProviders()) {
       try {
-        const altTransporter = await this.getTransporter(altPort, altSecure);
-        info = await altTransporter.sendMail(mailOptions);
-        console.log(`[EmailService] Alternate port ${altPort} delivery succeeded!`);
-      } catch (fallbackErr) {
-        const rawMsg = fallbackErr.message || sendErr.message || "";
-        if (rawMsg.includes("535") || rawMsg.includes("Username and Password not accepted") || rawMsg.includes("BadCredentials")) {
-          throw new Error(
-            "Gmail SMTP Authentication Failed: Invalid credentials. For Gmail, you must use your full Gmail address in SMTP_USER and a 16-character Google App Password in SMTP_PASS."
-          );
-        }
-        if (rawMsg.includes("ECONNREFUSED") || rawMsg.includes("ETIMEDOUT") || rawMsg.includes("ENOTFOUND")) {
-          throw new Error(
-            `SMTP Connection Timeout on ${process.env.SMTP_HOST || "smtp.gmail.com"}. Local network/firewall blocked outbound SMTP connection.`
-          );
-        }
-        throw new Error(`SMTP Mail delivery failed: ${rawMsg}`);
+        const result = await send(message);
+        console.log(`[Email] Code sent to ${recipient} via ${result.provider}`);
+        return result;
+      } catch (err) {
+        console.warn(`[Email] ${name} failed: ${err.message}`);
+        errors.push(`${name}: ${err.message}`);
       }
     }
-
-    // Verify provider acceptance
-    const acceptedList = Array.isArray(info.accepted) ? info.accepted.map((e) => String(e).toLowerCase()) : [];
-    const isAccepted = acceptedList.includes(cleanTo);
-
-    if (!isAccepted) {
-      const rejectedList = Array.isArray(info.rejected) ? info.rejected.join(", ") : "none";
-      throw new Error(
-        `Email rejected by mail provider. Recipient ${cleanTo} was not accepted by the SMTP server (Rejected: ${rejectedList}, Response: ${info.response || "No response"}).`
-      );
-    }
-
-    console.log(`\n======================================================`);
-    console.log(`[EmailService] OTP Email accepted by mail provider!`);
-    console.log(`[Recipient]   ${cleanTo}`);
-    console.log(`[Role]        ${roleDisplayName}`);
-    console.log(`[MessageId]   ${info.messageId}`);
-    console.log(`[Provider Response] ${info.response || "Accepted"}`);
-    console.log(`======================================================\n`);
-
-    return {
-      messageId: info.messageId,
-      accepted: info.accepted,
-      response: info.response,
-      isRealSmtp: this.isSmtpConfigured(),
-    };
+    throw new Error(errors.length ? errors.join(" | ") : "No email provider configured.");
   }
 }
 

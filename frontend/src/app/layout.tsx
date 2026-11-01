@@ -1,23 +1,34 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 import AssistantSidebar from "@/components/assistant-sidebar";
 
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const serif = Source_Serif_4({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-serif-display",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "NyayaFlow | Court & Case Management Platform",
+  title: {
+    default: "NyayaFlow — Court case filing and tracking",
+    template: "%s · NyayaFlow",
+  },
   description:
-    "Electronic case filing, registry scrutiny, and daily cause-list management portal.",
+    "File petitions, track cases by CNR, and manage court workflows for citizens, advocates, police, registry and judges.",
 };
 
-export const viewport = {
+export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  themeColor: "#f5f6f8",
 };
 
 export default function RootLayout({
@@ -26,22 +37,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.className} h-full dark`}>
-      <body className="min-h-full flex flex-col text-neutral-100 relative antialiased bg-[#12100e]">
-        {/* Courtroom Law Library Background (Fixed Layer) */}
-        <div
-          className="fixed inset-0 -z-10 pointer-events-none bg-cover bg-center bg-no-repeat bg-fixed opacity-40"
-          style={{
-            backgroundImage: `linear-gradient(180deg, rgba(18, 16, 14, 0.88) 0%, rgba(18, 16, 14, 0.95) 100%), url('/images/courtroom-bg.jpg')`,
-            backgroundAttachment: "fixed",
-          }}
-        />
-
-        <div className="relative z-10 flex-1 flex flex-col">
-          {children}
-        </div>
-
-        {/* Floating Court Assistant */}
+    <html lang="en" className={`${inter.variable} ${serif.variable} h-full`}>
+      <body className="min-h-full flex flex-col bg-canvas text-ink antialiased">
+        <div className="flex-1 flex flex-col">{children}</div>
         <AssistantSidebar />
       </body>
     </html>
