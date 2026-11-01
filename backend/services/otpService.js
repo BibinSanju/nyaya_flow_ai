@@ -9,7 +9,9 @@ const COOLDOWN_MS = 60 * 1000;
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_PER_WINDOW = 5;
 
-const isProduction = () => process.env.NODE_ENV === "production";
+// OTP_DELIVERY=email sends codes by email. Anything else (the default) is demo
+// mode: the code is returned to the login page and shown on screen.
+const emailDelivery = () => (process.env.OTP_DELIVERY || "").trim().toLowerCase() === "email";
 
 function hashOtp(otp) {
   return crypto.createHmac("sha256", getJwtSecret()).update(String(otp).trim()).digest("hex");
@@ -49,9 +51,9 @@ class OTPService {
       throw httpError("Too many codes requested. Please wait 10 minutes and try again.", 429);
     }
 
-    const emailConfigured = EmailService.isConfigured();
-    if (!emailConfigured && isProduction()) {
-      console.error("[OTP] No email provider configured (set BREVO_API_KEY or RESEND_API_KEY).");
+    const sendEmail = emailDelivery();
+    if (sendEmail && !EmailService.isConfigured()) {
+      console.error("[OTP] OTP_DELIVERY=email but no email provider is configured.");
       throw httpError("Sign-in codes can't be sent right now. Please contact the administrator.", 503);
     }
 
@@ -71,7 +73,7 @@ class OTPService {
     });
 
     let devOtp;
-    if (emailConfigured) {
+    if (sendEmail) {
       try {
         await EmailService.sendOtpEmail({ to: email, otp, role, expiryMinutes });
       } catch (err) {
@@ -91,7 +93,7 @@ class OTPService {
 
     return {
       success: true,
-      message: `We sent a 6-digit code to ${maskEmail(email)}.`,
+      message: sendEmail ? `We sent a 6-digit code to ${maskEmail(email)}.` : "Demo mode: your code is shown on screen.",
       contactMasked: maskEmail(email),
       expiresInSeconds: expiryMinutes * 60,
       cooldownSeconds: COOLDOWN_MS / 1000,

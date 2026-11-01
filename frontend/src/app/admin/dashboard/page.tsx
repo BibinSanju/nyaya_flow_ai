@@ -48,7 +48,8 @@ export default function AdminDashboard() {
     listed: petitions.filter((p) => p.cnr_number).length,
   };
 
-  const emailOk = health?.emailService ? !/terminal/i.test(health.emailService) : false;
+  const emailDemo = /demo/i.test(health?.emailService || "");
+  const emailOk = /^Email via/i.test(health?.emailService || "") || emailDemo;
   const aiOk = health?.groqAi ? !/offline/i.test(health.groqAi) : false;
 
   return (
@@ -79,7 +80,7 @@ export default function AdminDashboard() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ServiceCard icon={Activity} label="API" ok={health?.status === "healthy"} detail={health ? "Responding" : "No response"} loading={loading} />
             <ServiceCard icon={Database} label="Database" ok={!!health?.supabaseConfigured} detail={health?.supabaseConfigured ? "Supabase connected" : "Not configured — data is not saved"} loading={loading} />
-            <ServiceCard icon={Mail} label="Email" ok={emailOk} detail={emailOk ? "Sending enabled" : "Not configured — codes are not emailed"} loading={loading} />
+            <ServiceCard icon={Mail} label="Sign-in codes" ok={emailOk} detail={emailDemo ? "Demo mode — shown on screen" : emailOk ? "Sent by email" : "Email selected but not configured"} loading={loading} />
             <ServiceCard icon={Bot} label="AI assistant" ok={aiOk} detail={aiOk ? "Groq connected" : "Offline answers only"} loading={loading} />
           </div>
           {health?.timestamp && (

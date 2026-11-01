@@ -162,8 +162,8 @@ export default function AuthPage() {
             </h1>
             <p className="mt-1.5 text-sm text-muted">
               {authMode === "login"
-                ? "We'll email you a one-time code. No password needed."
-                : "Register with your email. We'll send a code to confirm it."}
+                ? "Sign in with a one-time code. No password needed."
+                : "Register with your email, then confirm with a one-time code."}
             </p>
           </div>
 
@@ -239,7 +239,7 @@ export default function AuthPage() {
               ) : (
                 <div className="flex items-center justify-between gap-3 p-3 rounded-md bg-subtle text-sm">
                   <span className="text-ink-2 truncate">
-                    Code sent to <strong className="font-medium text-ink">{contact}</strong>
+                    {devOtp ? "Signing in as" : "Code sent to"} <strong className="font-medium text-ink">{contact}</strong>
                   </span>
                   <button
                     type="button"
@@ -273,6 +273,14 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {devOtp && (
+                <div className="rounded-md border border-brand/20 bg-brand-soft px-4 py-3 text-center">
+                  <p className="text-xs font-medium text-brand-ink">Demo mode — your sign-in code is</p>
+                  <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.3em] text-brand-ink">{devOtp}</p>
+                  <p className="mt-1 text-xs text-muted">It&apos;s been filled in below. Click {authMode === "login" ? "Log in" : "Create account"} to continue.</p>
+                </div>
+              )}
+
               {otpSent && (
                 <div>
                   <div className="flex items-center justify-between">
@@ -302,15 +310,6 @@ export default function AuthPage() {
                 </div>
               )}
 
-              {devOtp && (
-                <div className="callout callout-warning">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>
-                    Email delivery isn&apos;t configured, so the code was filled in for you:{" "}
-                    <span className="font-mono font-semibold">{devOtp}</span>
-                  </span>
-                </div>
-              )}
 
               {errorMessage && (
                 <div className="callout callout-error" role="alert">
